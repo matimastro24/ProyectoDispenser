@@ -832,7 +832,6 @@ char *rc522_picc_type_name(rc522_picc_type_t type)
             return "unknown";
     }
 }
-
 esp_err_t rc522_picc_print(const rc522_picc_t *picc)
 {
     RC522_CHECK(picc == NULL);
@@ -848,6 +847,7 @@ esp_err_t rc522_picc_print(const rc522_picc_t *picc)
     ESP_LOGI(TAG, "|              | SAK:  0x%02" RC522_X, picc->sak);
     ESP_LOGI(TAG, "----------------");
     ESP_LOGI(TAG, "");
-
+    
+    
     return ESP_OK;
 }
