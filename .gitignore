@@ -1,0 +1,55 @@
+# ========================
+# Archivos temporales y compilación
+# ========================
+
+# ESP-IDF
+build/
+sdkconfig
+sdkconfig.old
+cmake-build-*
+CMakeCache.txt
+CMakeFiles/
+*.elf
+*.bin
+*.map
+*.log
+
+# Arduino
+*.hex
+*.elf
+*.bin
+*.ino.cpp
+*.bak
+*.o
+*.d
+.pio/
+.pioenvs/
+.piolibdeps/
+.clangd/
+
+# VSCode / PlatformIO
+.vscode/
+.idea/
+*.code-workspace
+
+# Archivos del sistema operativo
+.DS_Store
+Thumbs.db
+desktop.ini
+
+# Archivos temporales o personales
+*.tmp
+*.swp
+*.swo
+*.bak
+*.old
+
+# Archivos de Python (si usás scripts)
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+
+# Archivos de logs
+*.log
+logs/
