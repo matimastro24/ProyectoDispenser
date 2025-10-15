@@ -31,20 +31,18 @@ esp_err_t rc522_buffer_to_hex_str(
     RC522_CHECK(buffer_length < 1);
     RC522_CHECK(str_buffer == NULL);
 
-    const char *format = "%02" RC522_X " ";
-    const uint8_t formatted_length = 3;
-
-    RC522_CHECK(str_buffer_length < (buffer_length * formatted_length));
+    RC522_CHECK(str_buffer_length < (buffer_length * 2 + 1));
 
     uint16_t len = 0;
     for (uint16_t i = 0; i < buffer_length; i++) {
-        len += sprintf(str_buffer + len, format, buffer[i]);
+        len += sprintf(str_buffer + len, "%02x", buffer[i]);
     }
 
-    str_buffer[len - 1] = 0x00;
+    str_buffer[len] = '\0'; 
 
     return ESP_OK;
 }
+
 
 inline esp_err_t rc522_nibbles(uint8_t byte, uint8_t *msb, uint8_t *lsb)
 {
