@@ -22,7 +22,8 @@ extern esp_err_t esp_crt_bundle_attach(void *conf);
 #define WIFI_PASS      "carlota2021"
 #define MAX_RETRY      5
 
-#define TARGET_URL     "https://script.google.com/macros/s/AKfycbyLY1mi1zXoB3DVN1218tuNaLsfvXk8MdQWMtuxRMkNIshLWVJzXq0T6pVDu5d_V3z9pQ/exec?uid=123456"
+#define GSCRIPT_BASE "https://script.google.com/macros/s/AKfycbyLY1mi1zXoB3DVN1218tuNaLsfvXk8MdQWMtuxRMkNIshLWVJzXq0T6pVDu5d_V3z9pQ/exec"
+
 
 static EventGroupHandle_t s_wifi_event_group;
 static int s_retry_num = 0;
@@ -102,7 +103,7 @@ void wifi_init_sta(void)
         ESP_LOGE(TAG, "Timeout esperando WiFi");
     }
     
-    xTaskCreate(&http_get_task, "http_get_task", 8192, NULL, 5, NULL);
+    //xTaskCreate(&http_get_task, "http_get_task", 8192, NULL, 5, NULL);
 }
 
 esp_err_t http_event_handler(esp_http_client_event_t *evt)
@@ -140,23 +141,30 @@ esp_err_t http_event_handler(esp_http_client_event_t *evt)
     return ESP_OK;
 }
 
+// pv debe ser un char* malloc'd (ej: strdup), con la query: "uid=123" o "dni=...&pin=..."
 void http_get_task(void *pv)
 {
+    char *query = (char *)pv;                 // lo liberamos al final
+    char url[512];
+
+    // arma la URL final: BASE + ? + query   (si GSCRIPT_BASE ya trajera '?', usaría '&')
+    const bool base_has_q = (strchr(GSCRIPT_BASE, '?') != NULL);
+    snprintf(url, sizeof(url), "%s%s%s", GSCRIPT_BASE, base_has_q ? "&" : "?", query ? query : "");
+
     esp_http_client_config_t config = {
-        .url = TARGET_URL,
+        .url = url,
         .method = HTTP_METHOD_GET,
         .event_handler = http_event_handler,
         .timeout_ms = 10000,
-        // Habilita bundle de certificados para HTTPS (Google/Apps Script)
-        #if CONFIG_MBEDTLS_CERTIFICATE_BUNDLE
-    		.crt_bundle_attach = esp_crt_bundle_attach,  // <- usa bundle
-		#endif
-		
+#if CONFIG_MBEDTLS_CERTIFICATE_BUNDLE
+        .crt_bundle_attach = esp_crt_bundle_attach,
+#endif
     };
 
     esp_http_client_handle_t client = esp_http_client_init(&config);
     if (!client) {
         ESP_LOGE(TAG, "No se pudo crear http client");
+        if (query) free(query);
         vTaskDelete(NULL);
         return;
     }
@@ -165,13 +173,28 @@ void http_get_task(void *pv)
     if (err == ESP_OK) {
         int status = esp_http_client_get_status_code(client);
         int cl = esp_http_client_get_content_length(client);
-        ESP_LOGI(TAG, "HTTP GET ok, status=%d, content_length=%d", status, cl);
+        ESP_LOGI(TAG, "GET OK status=%d content_length=%d", status, cl);
     } else {
-        ESP_LOGE(TAG, "HTTP GET error: %s", esp_err_to_name(err));
+        ESP_LOGE(TAG, "GET error: %s", esp_err_to_name(err));
     }
 
     esp_http_client_cleanup(client);
+    if (query) free(query);                   // liberamos lo que mandaste con strdup()
     vTaskDelete(NULL);
+}
+
+// Llama a la tarea pasando "uid=1234567"
+void http_get_uid_async(const char *uid_hex_or_num) {
+    char tmp[64];
+    snprintf(tmp, sizeof(tmp), "uid=%s", uid_hex_or_num);
+    xTaskCreate(&http_get_task, "http_get_task", 8192, strdup(tmp), 5, NULL);
+}
+
+// Llama a la tarea pasando "dni=...&pin=..."
+void http_get_dni_pin_async(const char *dni, const char *pin) {
+    char tmp[96];
+    snprintf(tmp, sizeof(tmp), "dni=%s&pin=%s", dni, pin);
+    xTaskCreate(&http_get_task, "http_get_task", 8192, strdup(tmp), 5, NULL);
 }
 
 

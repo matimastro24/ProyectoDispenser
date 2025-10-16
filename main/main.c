@@ -80,6 +80,12 @@ void app_main()
     
     ESP_ERROR_CHECK(nvs_flash_init());
     wifi_init_sta();
+    
+    // Enviar UID
+	http_get_uid_async("123456");
+
+	// Enviar DNI + PIN
+	//http_get_dni_pin_async("43425034", "1234");
 	
     
 }
