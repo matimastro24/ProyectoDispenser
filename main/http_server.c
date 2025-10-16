@@ -9,7 +9,8 @@
 #include "esp_netif.h"
 #include "esp_http_client.h"
 #include "esp_sntp.h"
-#include "sdkconfig.h"                  // <- imprescindible
+#include "sdkconfig.h" // <- imprescindible
+#include "cJSON.h"               
 #include "http_server.h"
 
 #if CONFIG_MBEDTLS_CERTIFICATE_BUNDLE
@@ -126,6 +127,7 @@ esp_err_t http_event_handler(esp_http_client_event_t *evt)
     case HTTP_EVENT_ON_FINISH:
         if (accum) {
             ESP_LOGI(TAG, "Respuesta (%d bytes):\n%.*s", accum_len, accum_len, accum);
+            procesar_json(accum);
             free(accum);
             accum = NULL;
             accum_len = 0;
@@ -150,7 +152,7 @@ void http_get_task(void *pv)
     // arma la URL final: BASE + ? + query   (si GSCRIPT_BASE ya trajera '?', usaría '&')
     const bool base_has_q = (strchr(GSCRIPT_BASE, '?') != NULL);
     snprintf(url, sizeof(url), "%s%s%s", GSCRIPT_BASE, base_has_q ? "&" : "?", query ? query : "");
-
+    //ESP_LOGI(TAG, "URL: %s", url);
     esp_http_client_config_t config = {
         .url = url,
         .method = HTTP_METHOD_GET,
@@ -197,4 +199,30 @@ void http_get_dni_pin_async(const char *dni, const char *pin) {
     xTaskCreate(&http_get_task, "http_get_task", 8192, strdup(tmp), 5, NULL);
 }
 
+void procesar_json(const char *json_str)
+{
+    // Parsear el texto recibido
+    cJSON *root = cJSON_Parse(json_str);
+    if (root == NULL) {
+        ESP_LOGE("JSON", "Error al parsear JSON");
+        return;
+    }
+
+    // Leer los campos esperados
+    const cJSON *nombre = cJSON_GetObjectItemCaseSensitive(root, "nombre");
+    const cJSON *apellido = cJSON_GetObjectItemCaseSensitive(root, "apellido");
+    const cJSON *extracciones = cJSON_GetObjectItemCaseSensitive(root, "extracciones");
+
+    // Verificar y mostrar
+    if (cJSON_IsString(nombre) && cJSON_IsString(apellido) && cJSON_IsNumber(extracciones)) {
+        ESP_LOGI("JSON", "Nombre: %s", nombre->valuestring);
+        ESP_LOGI("JSON", "Apellido: %s", apellido->valuestring);
+        ESP_LOGI("JSON", "Extracciones: %d", extracciones->valueint);
+    } else {
+        ESP_LOGW("JSON", "Formato JSON inesperado");
+    }
+
+    // Liberar memoria
+    cJSON_Delete(root);
+}
 
