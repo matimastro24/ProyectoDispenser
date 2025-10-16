@@ -19,8 +19,8 @@ extern esp_err_t esp_crt_bundle_attach(void *conf);
 #endif
 
 
-#define WIFI_SSID      "MASTRO-WIFI"
-#define WIFI_PASS      "carlota2021"
+#define WIFI_SSID      "ESP32"
+#define WIFI_PASS      "matias123"
 #define MAX_RETRY      5
 
 #define GSCRIPT_BASE "https://script.google.com/macros/s/AKfycbyLY1mi1zXoB3DVN1218tuNaLsfvXk8MdQWMtuxRMkNIshLWVJzXq0T6pVDu5d_V3z9pQ/exec"

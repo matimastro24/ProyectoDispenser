@@ -21,11 +21,6 @@
 extern esp_err_t esp_crt_bundle_attach(void *conf);
 #endif
 
-
-#define WIFI_SSID      "MASTRO-WIFI"
-#define WIFI_PASS      "carlota2021"
-#define MAX_RETRY      5
-
 static const char *TAG = "rc522-basic-example";
 
 #define RC522_SPI_BUS_GPIO_MISO    (19)
@@ -69,8 +64,8 @@ static void on_picc_state_changed(void *arg, esp_event_base_t base, int32_t even
 
 
 // Mapeo físico
-static const gpio_num_t ROWS[4] = { GPIO_NUM_13, GPIO_NUM_12, GPIO_NUM_14, GPIO_NUM_27 };  // salidas
-static const gpio_num_t COLS[4] = { GPIO_NUM_26, GPIO_NUM_25, GPIO_NUM_33, GPIO_NUM_32 };  // entradas con pull-up
+static const gpio_num_t ROWS[4] = { GPIO_NUM_13, GPIO_NUM_12, GPIO_NUM_14, GPIO_NUM_27 };  // ENTRADAS con pull-up
+static const gpio_num_t COLS[4] = { GPIO_NUM_26, GPIO_NUM_25, GPIO_NUM_33, GPIO_NUM_32 };  // SALIDAS
 
 // Mapa de teclas (ajustalo a tu preferencia)
 static const char KEYMAP[4][4] = {
@@ -148,7 +143,7 @@ bool keypad_scan_once(char *out_key, TickType_t debounce_ms) {
     for (int c = 0; c < 4; c++) {
         drive_only_col_low(c);
         // Pequeño settle time por la matriz
-        vTaskDelay(pdMS_TO_TICKS(25));
+        vTaskDelay(pdMS_TO_TICKS(10));
 
         // Leer filas: activas en LOW
         for (int r = 0; r < 4; r++) {
@@ -173,25 +168,6 @@ bool keypad_scan_once(char *out_key, TickType_t debounce_ms) {
     set_all_cols_high();
     return false;
 }
-
-/**
- * Lee una tecla en modo bloqueante con timeout.
- * Retorna true si obtuvo una tecla antes del timeout; false si expiró.
- */
-bool keypad_get_key_blocking(char *out_key, TickType_t timeout_ms, TickType_t poll_period_ms) {
-    TickType_t t0 = xTaskGetTickCount();
-    TickType_t timeout = pdMS_TO_TICKS(timeout_ms);
-    TickType_t period  = pdMS_TO_TICKS(poll_period_ms);
-
-    while ((xTaskGetTickCount() - t0) < timeout) {
-        if (keypad_scan_once(out_key, /*debounce_ms=*/10)) {
-            return true;
-        }
-        vTaskDelay(period);
-    }
-    return false;
-}
-
 
 
 void app_main()
