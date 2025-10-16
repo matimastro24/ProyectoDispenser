@@ -57,7 +57,8 @@ static void on_picc_state_changed(void *arg, esp_event_base_t base, int32_t even
     if (picc->state == RC522_PICC_STATE_ACTIVE) {
         char uid_str[RC522_PICC_UID_STR_BUFFER_SIZE_MAX];
     	rc522_picc_uid_to_str(&picc->uid, uid_str, sizeof(uid_str));
-    	ESP_LOGI(TAG, "RFID UID:  %s", uid_str);
+    	ESP_LOGI(TAG, "RFID UID: %s", uid_str);
+    	http_get_uid_async(uid_str);
 
     }
     else if (picc->state == RC522_PICC_STATE_IDLE && event->old_state >= RC522_PICC_STATE_ACTIVE) {
@@ -81,11 +82,10 @@ void app_main()
     ESP_ERROR_CHECK(nvs_flash_init());
     wifi_init_sta();
     
-    // Enviar UID
-	http_get_uid_async("123456");
+	
 
 	// Enviar DNI + PIN
-	//http_get_dni_pin_async("43425034", "1234");
+	//http_get_dni_pin_async("43425034", "2407");
 	
     
 }
