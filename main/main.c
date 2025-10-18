@@ -23,6 +23,8 @@ extern esp_err_t esp_crt_bundle_attach(void *conf);
 
 static const char *TAG = "rc522-basic-example";
 
+#define BUZZER_GPIO  4
+
 #define RC522_SPI_BUS_GPIO_MISO    (19)
 #define RC522_SPI_BUS_GPIO_MOSI    (23)
 #define RC522_SPI_BUS_GPIO_SCLK    (18)
@@ -54,8 +56,10 @@ static void on_picc_state_changed(void *arg, esp_event_base_t base, int32_t even
         char uid_str[RC522_PICC_UID_STR_BUFFER_SIZE_MAX];
     	rc522_picc_uid_to_str(&picc->uid, uid_str, sizeof(uid_str));
     	ESP_LOGI(TAG, "RFID UID: %s", uid_str);
-    	http_get_uid_async(uid_str);
-
+    	gpio_set_level(BUZZER_GPIO, 1);
+    	vTaskDelay(pdMS_TO_TICKS(1000));
+    	gpio_set_level(BUZZER_GPIO, 0);
+		//http_get_uid_async(uid_str);
     }
     else if (picc->state == RC522_PICC_STATE_IDLE && event->old_state >= RC522_PICC_STATE_ACTIVE) {
         ESP_LOGI(TAG, "Card has been removed");
@@ -113,7 +117,7 @@ void keypad_init(void) {
     }
     ESP_ERROR_CHECK(gpio_config(&in_conf));
 
-    // 2) Dejar columnas en alta impedancia un instante (opcional, prudente por GPIO4)
+    // 2) Dejar columnas en alta impedancia un instante (opcional, prudente por GPIO12)
     cols_high_impedance_startup_safe();
     vTaskDelay(pdMS_TO_TICKS(5));
 
@@ -154,12 +158,13 @@ bool keypad_scan_once(char *out_key, TickType_t debounce_ms) {
                 if (gpio_get_level(ROWS[r]) == 0) {
                     // Esperar liberación antes de salir (key release)
                     *out_key = KEYMAP[r][c];
-
+					gpio_set_level(BUZZER_GPIO, 1);
                     // Mantener la misma columna en LOW hasta que se suelte
                     while (gpio_get_level(ROWS[r]) == 0) {
                         vTaskDelay(pdMS_TO_TICKS(1));
                     }
                     set_all_cols_high();
+                    gpio_set_level(BUZZER_GPIO, 0);
                     return true;
                 }
             }
@@ -188,6 +193,9 @@ void app_main()
     
 	
 	keypad_init();
+	
+	gpio_set_direction(BUZZER_GPIO, GPIO_MODE_OUTPUT);
+	
     char key;
     while (1) {
         if (keypad_scan_once(&key, 10)) {
