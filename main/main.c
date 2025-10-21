@@ -25,7 +25,6 @@ extern esp_err_t esp_crt_bundle_attach(void *conf);
 
 static const char *TAG = "rc522-basic-example";
 
-#define BUZZER_GPIO  4
 
 #define RC522_SPI_BUS_GPIO_MISO    (19)
 #define RC522_SPI_BUS_GPIO_MOSI    (23)
@@ -87,8 +86,6 @@ void app_main()
     
 	
 	keypad_init();
-	
-	gpio_set_direction(BUZZER_GPIO, GPIO_MODE_OUTPUT);
 	
     char key;
     while (1) {
