@@ -17,6 +17,7 @@
 #include "http_server.h"                  // <- imprescindible
 #include "keypad.h" 
 #include "buzzer.h"
+#include "lcd_driver.h"
 
 #if CONFIG_MBEDTLS_CERTIFICATE_BUNDLE
 // forward declaration: evita incluir el header y alcanza para asignarlo en la config
@@ -100,3 +101,28 @@ void app_main()
 	
     
 }
+
+/*
+void app_main(void)
+{
+    //iniciar lcd
+    i2c_master_bus_handle_t i2c_bus;
+    i2c_master_dev_handle_t lcd_dev;
+    lcd_t lcd;
+    i2c_init(&i2c_bus, &lcd_dev);
+    lcd_init(&lcd, lcd_dev);
+
+
+    //iniciar lcd iniciado
+    lcd_clear(&lcd);
+    lcd_set_cursor(&lcd, 0, 0);
+    lcd_write_string(&lcd,"fila:0, col:0");
+    lcd_set_cursor(&lcd, 1, 1);
+    lcd_write_string(&lcd,"fila:1, col:1");
+    lcd_set_cursor(&lcd, 2, 2);
+    lcd_write_string(&lcd,"fila:2, col:2");
+    lcd_set_cursor(&lcd, 3, 3);
+    lcd_write_string(&lcd,"fila:3, col:3");
+
+}
+*/
