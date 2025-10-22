@@ -85,8 +85,27 @@ void app_main()
     ESP_ERROR_CHECK(nvs_flash_init());
     wifi_init_sta();
     
-	
+	buzzer();
 	keypad_init();
+	
+    i2c_master_bus_handle_t i2c_bus;
+    i2c_master_dev_handle_t lcd_dev;
+    lcd_t lcd;
+    i2c_init(&i2c_bus, &lcd_dev);
+    lcd_init(&lcd, lcd_dev);
+
+
+    //iniciar lcd iniciado
+    lcd_clear(&lcd);
+    lcd_set_cursor(&lcd, 0, 0);
+    lcd_write_string(&lcd,"fila:0, col:0");
+    lcd_set_cursor(&lcd, 1, 1);
+    lcd_write_string(&lcd,"fila:1, col:1");
+    lcd_set_cursor(&lcd, 2, 2);
+    lcd_write_string(&lcd,"fila:2, col:2");
+    lcd_set_cursor(&lcd, 3, 3);
+    lcd_write_string(&lcd,"fila:3, col:3");
+
 	
     char key;
     while (1) {
