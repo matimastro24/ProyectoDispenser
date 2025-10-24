@@ -1,4 +1,4 @@
-idf_component_register(SRCS "main.c" 
+idf_component_register(SRCS "rfid.c" "main.c" 
 						    "http_server.c"
 						    "keypad.c"
 						    "buzzer.c"
