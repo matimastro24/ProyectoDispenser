@@ -1,7 +1,4 @@
 #include <esp_log.h>
-#include "rc522.h"
-#include "driver/rc522_spi.h"
-#include "rc522_picc.h"
 #include "driver/gpio.h"
 #include <string.h>
 #include "freertos/FreeRTOS.h"
@@ -18,68 +15,27 @@
 #include "keypad.h" 
 #include "buzzer.h"
 #include "lcd_driver.h"
+#include "rfid.h"
 
 #if CONFIG_MBEDTLS_CERTIFICATE_BUNDLE
 // forward declaration: evita incluir el header y alcanza para asignarlo en la config
 extern esp_err_t esp_crt_bundle_attach(void *conf);
 #endif
 
-static const char *TAG = "rc522-basic-example";
+static const char *TAG = "MAIN";
 
 
-#define RC522_SPI_BUS_GPIO_MISO    (19)
-#define RC522_SPI_BUS_GPIO_MOSI    (23)
-#define RC522_SPI_BUS_GPIO_SCLK    (18)
-#define RC522_SPI_SCANNER_GPIO_SDA (5)
-#define RC522_SCANNER_GPIO_RST     (-1) // soft-reset
-
-static rc522_spi_config_t driver_config = {
-    .host_id = SPI3_HOST,
-    .bus_config = &(spi_bus_config_t){
-        .miso_io_num = RC522_SPI_BUS_GPIO_MISO,
-        .mosi_io_num = RC522_SPI_BUS_GPIO_MOSI,
-        .sclk_io_num = RC522_SPI_BUS_GPIO_SCLK,
-    },
-    .dev_config = {
-        .spics_io_num = RC522_SPI_SCANNER_GPIO_SDA,
-    },
-    .rst_io_num = RC522_SCANNER_GPIO_RST,
-};
 
 static rc522_driver_handle_t driver;
 static rc522_handle_t scanner;
-
-static void on_picc_state_changed(void *arg, esp_event_base_t base, int32_t event_id, void *data)
-{
-    rc522_picc_state_changed_event_t *event = (rc522_picc_state_changed_event_t *)data;
-    rc522_picc_t *picc = event->picc;
-
-    if (picc->state == RC522_PICC_STATE_ACTIVE) {
-        char uid_str[RC522_PICC_UID_STR_BUFFER_SIZE_MAX];
-    	rc522_picc_uid_to_str(&picc->uid, uid_str, sizeof(uid_str));
-    	ESP_LOGI(TAG, "RFID UID: %s", uid_str);
-    	setBuzzer(true);
-    	vTaskDelay(pdMS_TO_TICKS(1000));
-    	setBuzzer(false);
-		//http_get_uid_async(uid_str);
-    }
-    else if (picc->state == RC522_PICC_STATE_IDLE && event->old_state >= RC522_PICC_STATE_ACTIVE) {
-        ESP_LOGI(TAG, "Card has been removed");
-    }
-}
-
+static i2c_master_bus_handle_t i2c_bus;
+static i2c_master_dev_handle_t lcd_dev;
+static lcd_t lcd;
 
 void app_main()
 {
-    rc522_spi_create(&driver_config, &driver);
-    rc522_driver_install(driver);
 
-    rc522_config_t scanner_config = {
-        .driver = driver,
-    };
-
-    rc522_create(&scanner_config, &scanner);
-    rc522_register_events(scanner, RC522_EVENT_PICC_STATE_CHANGED, on_picc_state_changed, NULL);
+    rfid_init(&driver, &scanner);
     rc522_start(scanner);
     
     ESP_ERROR_CHECK(nvs_flash_init());
@@ -88,9 +44,7 @@ void app_main()
 	buzzer();
 	keypad_init();
 	
-    i2c_master_bus_handle_t i2c_bus;
-    i2c_master_dev_handle_t lcd_dev;
-    lcd_t lcd;
+
     i2c_init(&i2c_bus, &lcd_dev);
     lcd_init(&lcd, lcd_dev);
 
@@ -114,34 +68,5 @@ void app_main()
         }
         vTaskDelay(pdMS_TO_TICKS(5)); // periodo de escaneo
     }
-
-	// Enviar DNI + PIN
-	//http_get_dni_pin_async("43425034", "2407");
-	
-    
 }
 
-/*
-void app_main(void)
-{
-    //iniciar lcd
-    i2c_master_bus_handle_t i2c_bus;
-    i2c_master_dev_handle_t lcd_dev;
-    lcd_t lcd;
-    i2c_init(&i2c_bus, &lcd_dev);
-    lcd_init(&lcd, lcd_dev);
-
-
-    //iniciar lcd iniciado
-    lcd_clear(&lcd);
-    lcd_set_cursor(&lcd, 0, 0);
-    lcd_write_string(&lcd,"fila:0, col:0");
-    lcd_set_cursor(&lcd, 1, 1);
-    lcd_write_string(&lcd,"fila:1, col:1");
-    lcd_set_cursor(&lcd, 2, 2);
-    lcd_write_string(&lcd,"fila:2, col:2");
-    lcd_set_cursor(&lcd, 3, 3);
-    lcd_write_string(&lcd,"fila:3, col:3");
-
-}
-*/
