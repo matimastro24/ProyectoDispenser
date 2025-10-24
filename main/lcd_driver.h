@@ -90,5 +90,6 @@ void lcd_backlight_on(lcd_t *lcd);
 void lcd_backlight_off(lcd_t *lcd);
 void lcd_create_char(lcd_t *lcd, uint8_t location, uint8_t charmap[8]);
 void lcd_write_custom_char(lcd_t *lcd, uint8_t location);
+void lcd_write_auto(lcd_t *lcd, const char *str, uint8_t start_row, uint8_t start_col);
 
 #endif // LCD_DRIVER_H
