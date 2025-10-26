@@ -81,8 +81,9 @@ void wifi_init_sta(void) {
 			{
 				.ssid = WIFI_SSID,
 				.password = WIFI_PASS,
-				.threshold.authmode = WIFI_AUTH_WPA2_PSK,
-				.sae_pwe_h2e = WPA3_SAE_PWE_BOTH,
+				.threshold.authmode = WIFI_AUTH_OPEN,  // acepta WPA/WPA2 y también abiertas
+				.sae_pwe_h2e = WPA3_SAE_PWE_UNSPECIFIED,
+				.pmf_cfg = { .capable = true, .required = false },
 			},
 	};
 	ESP_ERROR_CHECK(esp_wifi_set_mode(WIFI_MODE_STA));
