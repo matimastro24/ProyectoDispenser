@@ -20,8 +20,8 @@
 extern esp_err_t esp_crt_bundle_attach(void *conf);
 #endif
 
-#define WIFI_SSID "WIFICLARO"
-#define WIFI_PASS "Claro6296"
+#define WIFI_SSID "STARLINK"
+#define WIFI_PASS ""
 #define MAX_RETRY 5
 
 #define GSCRIPT_BASE                                                           \
