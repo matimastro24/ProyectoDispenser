@@ -263,5 +263,29 @@ void lcd_write_custom_char(lcd_t *lcd, uint8_t location) {
     lcd_write_char(lcd, location);
 }
 
+/*escribe con saltos de linea automaticos*/
+void lcd_write_auto(lcd_t *lcd, const char *str, uint8_t start_row, uint8_t start_col) {
+    uint8_t row = start_row;
+    uint8_t col = start_col;
 
+    // Recorremos cada carácter de la cadena
+    for (size_t i = 0; i < strlen(str); i++) {
+        // Si llegamos al final de la columna, pasamos al siguiente renglón
+        if (col >= LCD_COLS) {
+            col = 0;
+            row++;
+        }
 
+        // Si llegamos más allá de la última fila, dejamos de escribir
+        if (row >= LCD_ROWS) {
+            break;
+        }
+
+        // Posicionamos el cursor y escribimos el carácter
+        lcd_set_cursor(lcd, row, col);
+        char c[2] = { str[i], '\0' }; // Convertimos el carácter en string
+        lcd_write_string(lcd, c);
+
+        col++;
+    }
+}

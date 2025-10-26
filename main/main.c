@@ -16,6 +16,7 @@
 #include "buzzer.h"
 #include "lcd_driver.h"
 #include "rfid.h"
+#include "state_machine.h"
 
 #if CONFIG_MBEDTLS_CERTIFICATE_BUNDLE
 // forward declaration: evita incluir el header y alcanza para asignarlo en la config
@@ -25,48 +26,46 @@ extern esp_err_t esp_crt_bundle_attach(void *conf);
 static const char *TAG = "MAIN";
 
 
-
+// Handles globales
 static rc522_driver_handle_t driver;
 static rc522_handle_t scanner;
 static i2c_master_bus_handle_t i2c_bus;
 static i2c_master_dev_handle_t lcd_dev;
 static lcd_t lcd;
 
-void app_main()
+void app_main(void)
 {
-
-    rfid_init(&driver, &scanner);
-    rc522_start(scanner);
-    
+    // Inicialización de componentes
     ESP_ERROR_CHECK(nvs_flash_init());
-    wifi_init_sta();
-    
-	buzzer();
-	keypad_init();
-	
-
     i2c_init(&i2c_bus, &lcd_dev);
     lcd_init(&lcd, lcd_dev);
-
-
-    //iniciar lcd iniciado
     lcd_clear(&lcd);
-    lcd_set_cursor(&lcd, 0, 0);
-    lcd_write_string(&lcd,"fila:0, col:0");
-    lcd_set_cursor(&lcd, 1, 1);
-    lcd_write_string(&lcd,"fila:1, col:1");
-    lcd_set_cursor(&lcd, 2, 2);
-    lcd_write_string(&lcd,"fila:2, col:2");
-    lcd_set_cursor(&lcd, 3, 3);
-    lcd_write_string(&lcd,"fila:3, col:3");
+    lcd_write_string(&lcd, "Iniciando Sistema...");
 
-	
+    wifi_init_sta();
+    buzzer();
+    keypad_init();
+    // Inicializar RFID y registrar callback
+    rfid_init(&driver, &scanner);
+    // Inicializar máquina de estados
+    state_machine_init(&lcd, &scanner);
+    
+    ESP_LOGI(TAG, "Sistema inicializado correctamente");
+    
+    // Loop principal
     char key;
     while (1) {
+        // Actualizar máquina de estados (timeouts, etc)
+        state_machine_update();
+        
+        // Escanear teclado
         if (keypad_scan_once(&key, 10)) {
-            ESP_LOGI(TAG, "Tecla: %c", key);
+            ESP_LOGI(TAG, "Tecla presionada: %c", key);
+
+            //Actulizar maquina de estos al detectarse una tecla.
+            state_machine_key_pressed(key);
         }
-        vTaskDelay(pdMS_TO_TICKS(5)); // periodo de escaneo
+        
+        vTaskDelay(pdMS_TO_TICKS(10));
     }
 }
-

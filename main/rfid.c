@@ -13,10 +13,16 @@ static void on_picc_state_changed(void *arg, esp_event_base_t base,
 		char uid_str[RC522_PICC_UID_STR_BUFFER_SIZE_MAX];
 		rc522_picc_uid_to_str(&picc->uid, uid_str, sizeof(uid_str));
 		ESP_LOGI(TAG, "RFID UID: %s", uid_str);
+
+		// Notificar a la máquina de estados
+        state_machine_rfid_detected(uid_str);
+
+		//feedback sonoro
+		
 		setBuzzer(true);
 		vTaskDelay(pdMS_TO_TICKS(1000));
 		setBuzzer(false);
-		http_get_uid_async(uid_str);
+		//http_get_uid_async(uid_str); no esta presensete para la maquina de estados
 	} else if (picc->state == RC522_PICC_STATE_IDLE &&
 			   event->old_state >= RC522_PICC_STATE_ACTIVE) {
 		ESP_LOGI(TAG, "Card has been removed");

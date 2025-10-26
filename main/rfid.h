@@ -7,6 +7,7 @@
 #include "buzzer.h"
 #include "http_Server.h"
 #include <esp_log.h>
+#include "state_machine.h"
 
 #define RC522_SPI_BUS_GPIO_MISO    (19)
 #define RC522_SPI_BUS_GPIO_MOSI    (23)
