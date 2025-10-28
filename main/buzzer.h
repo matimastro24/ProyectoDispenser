@@ -6,3 +6,4 @@
 
 void buzzer(void);
 void setBuzzer(bool estado);
+void buzzer_task(void *pvParameters);

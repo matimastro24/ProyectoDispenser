@@ -13,3 +13,4 @@ void http_get_task(void *pv);
 void http_get_uid_async(const char *uid_hex_or_num);
 void http_get_dni_pin_async(const char *dni, const char *pin);
 void procesar_json(const char *json_str);
+bool wifi_is_connected(void);

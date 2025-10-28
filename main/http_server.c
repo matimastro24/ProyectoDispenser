@@ -20,8 +20,8 @@
 extern esp_err_t esp_crt_bundle_attach(void *conf);
 #endif
 
-#define WIFI_SSID "STARLINK"
-#define WIFI_PASS ""
+#define WIFI_SSID "ESP32"
+#define WIFI_PASS "matias123"
 #define MAX_RETRY 5
 
 #define GSCRIPT_BASE                                                           \
@@ -269,4 +269,10 @@ void procesar_json(const char *json_str) {
 
 	// Liberar memoria
 	cJSON_Delete(root);
+}
+
+bool wifi_is_connected(void)
+{
+    EventBits_t bits = xEventGroupGetBits(s_wifi_event_group);
+    return (bits & WIFI_CONNECTED_BIT) != 0;
 }

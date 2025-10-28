@@ -104,7 +104,7 @@ bool keypad_scan_once(char *out_key, TickType_t debounce_ms) {
                     // Esperar liberación antes de salir (key release)
                     *out_key = KEYMAP[r][c];
 
-					setBuzzer(true);
+					xTaskCreate(buzzer_task, "buzzer_task", 2048, NULL, 5, NULL);
 
                     // Mantener la misma columna en LOW hasta que se suelte
                     while (gpio_get_level(ROWS[r]) == 0) {
@@ -112,7 +112,6 @@ bool keypad_scan_once(char *out_key, TickType_t debounce_ms) {
                     }
                     set_all_cols_high();
 
-                    setBuzzer(false);
 
                     
                     return true;

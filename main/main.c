@@ -50,22 +50,28 @@ void app_main(void)
     // Inicializar máquina de estados
     state_machine_init(&lcd, &scanner);
     
-    ESP_LOGI(TAG, "Sistema inicializado correctamente");
+    if (wifi_is_connected()){
+    	ESP_LOGI(TAG, "Sistema inicializado correctamente");
     
-    // Loop principal
-    char key;
-    while (1) {
-        // Actualizar máquina de estados (timeouts, etc)
-        state_machine_update();
+    	// Loop principal
+    	char key;
+    	while (1) {
+        	// Actualizar máquina de estados (timeouts, etc)
+        	state_machine_update();
         
-        // Escanear teclado
-        if (keypad_scan_once(&key, 10)) {
-            ESP_LOGI(TAG, "Tecla presionada: %c", key);
+        	// Escanear teclado
+        	if (keypad_scan_once(&key, 10)) {
+            	ESP_LOGI(TAG, "Tecla presionada: %c", key);
 
-            //Actulizar maquina de estos al detectarse una tecla.
-            state_machine_key_pressed(key);
-        }
+            	//Actulizar maquina de estos al detectarse una tecla.
+            	state_machine_key_pressed(key);
+        	}
         
-        vTaskDelay(pdMS_TO_TICKS(10));
+        	vTaskDelay(pdMS_TO_TICKS(10));
+    	}
     }
+    ESP_LOGI(TAG, "Error Conexion WIFI");
+    lcd_clear(&lcd);
+    lcd_write_string(&lcd, "ERROR CONEXION WIFI!");
+    
 }
