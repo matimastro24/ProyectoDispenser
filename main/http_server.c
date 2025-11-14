@@ -13,6 +13,7 @@
 #include <esp_log.h>
 #include <string.h>
 #include "state_machine.h"
+#include "esp_http_server.h"
 
 #if CONFIG_MBEDTLS_CERTIFICATE_BUNDLE
 // forward declaration: evita incluir el header y alcanza para asignarlo en la
@@ -23,6 +24,15 @@ extern esp_err_t esp_crt_bundle_attach(void *conf);
 
 EventGroupHandle_t s_wifi_event_group;
 
+#define WIFI_NAMESPACE   "wifi_cfg"
+#define MAX_SSID_LEN     32
+#define MAX_PASS_LEN     64
+
+// AP fijo
+#define AP_SSID "ConfigESP32"
+#define AP_PASS "12345678"
+
+// Si no hay nada en NVS, usamos estas por defecto
 #ifndef WIFI_SSID
 #define WIFI_SSID "ESP32"
 #endif
@@ -30,11 +40,11 @@ EventGroupHandle_t s_wifi_event_group;
 #ifndef WIFI_PASS
 #define WIFI_PASS "matias123"
 #endif
-
-// AP siempre prendido
-#define AP_SSID "ConfigESP32"
-#define AP_PASS "12345678"
 #define MAX_RETRY 5
+
+static char g_ssid[MAX_SSID_LEN + 1] = {0};
+static char g_pass[MAX_PASS_LEN + 1] = {0};
+static bool g_have_credentials = false;
 
 #define GSCRIPT_BASE                                                           \
 	"https://script.google.com/macros/s/"                                      \
@@ -47,6 +57,172 @@ static int s_retry_num = 0;
 #define WIFI_FAIL_BIT BIT1
 
 static const char *TAG = "HTTP_SERVER";
+
+static const char *HTML_FORM =
+"<!DOCTYPE html>"
+"<html><head><meta charset='UTF-8'><title>Config WiFi</title></head>"
+"<body>"
+"<h2>Configuración WiFi STA</h2>"
+"<form action=\"/save\" method=\"GET\">"
+"SSID: <input type=\"text\" name=\"ssid\" value=\"%s\"><br><br>"
+"PASS: <input type=\"password\" name=\"pass\" value=\"%s\"><br><br>"
+"<input type=\"submit\" value=\"Guardar\">"
+"</form>"
+"<p>Conectado al AP: <b>ConfigESP32</b> (IP: 192.168.4.1)</p>"
+"</body></html>";
+
+static void load_wifi_credentials_from_nvs(void)
+{
+    nvs_handle_t nvs;
+    esp_err_t err = nvs_open(WIFI_NAMESPACE, NVS_READONLY, &nvs);
+    if (err != ESP_OK) {
+        ESP_LOGI(TAG, "No hay credenciales en NVS (%s)", esp_err_to_name(err));
+        return;
+    }
+
+    size_t len_ssid = sizeof(g_ssid);
+    size_t len_pass = sizeof(g_pass);
+
+    err = nvs_get_str(nvs, "ssid", g_ssid, &len_ssid);
+    if (err != ESP_OK) {
+        ESP_LOGI(TAG, "No se pudo leer ssid (%s)", esp_err_to_name(err));
+        nvs_close(nvs);
+        return;
+    }
+
+    err = nvs_get_str(nvs, "pass", g_pass, &len_pass);
+    if (err != ESP_OK) {
+        ESP_LOGI(TAG, "No se pudo leer pass (%s)", esp_err_to_name(err));
+        nvs_close(nvs);
+        return;
+    }
+
+    nvs_close(nvs);
+    g_have_credentials = true;
+    ESP_LOGI(TAG, "Credenciales NVS: ssid='%s'", g_ssid);
+}
+
+static void save_wifi_credentials_to_nvs(const char *ssid, const char *pass)
+{
+    nvs_handle_t nvs;
+    esp_err_t err = nvs_open(WIFI_NAMESPACE, NVS_READWRITE, &nvs);
+    if (err != ESP_OK) {
+        ESP_LOGE(TAG, "Error abriendo NVS (%s)", esp_err_to_name(err));
+        return;
+    }
+
+    ESP_ERROR_CHECK(nvs_set_str(nvs, "ssid", ssid));
+    ESP_ERROR_CHECK(nvs_set_str(nvs, "pass", pass));
+    ESP_ERROR_CHECK(nvs_commit(nvs));
+
+    nvs_close(nvs);
+
+    strncpy(g_ssid, ssid, sizeof(g_ssid)-1);
+    strncpy(g_pass, pass, sizeof(g_pass)-1);
+    g_have_credentials = true;
+
+    ESP_LOGI(TAG, "Credenciales guardadas en NVS");
+}
+
+static esp_err_t root_get_handler(httpd_req_t *req)
+{
+    char resp[1024];
+    const char *ssid = g_have_credentials ? g_ssid : "";
+    const char *pass = g_have_credentials ? g_pass : "";
+
+    snprintf(resp, sizeof(resp), HTML_FORM, ssid, pass);
+
+    httpd_resp_set_type(req, "text/html");
+    httpd_resp_send(req, resp, HTTPD_RESP_USE_STRLEN);
+    return ESP_OK;
+}
+
+static esp_err_t save_get_handler(httpd_req_t *req)
+{
+    char ssid[MAX_SSID_LEN + 1] = {0};
+    char pass[MAX_PASS_LEN + 1] = {0};
+
+    int qlen = httpd_req_get_url_query_len(req) + 1;
+    if (qlen > 1) {
+        char *buf = malloc(qlen);
+        if (buf) {
+            if (httpd_req_get_url_query_str(req, buf, qlen) == ESP_OK) {
+                httpd_query_key_value(buf, "ssid", ssid, sizeof(ssid));
+                httpd_query_key_value(buf, "pass", pass, sizeof(pass));
+            }
+            free(buf);
+        }
+    }
+
+    ESP_LOGI(TAG, "Nuevas credenciales: ssid='%s', pass='%s'", ssid, pass);
+    if (strlen(ssid) == 0) {
+        httpd_resp_sendstr(req, "SSID vacío, volver atrás");
+        return ESP_OK;
+    }
+
+    // Guardar en NVS
+    save_wifi_credentials_to_nvs(ssid, pass);
+
+    // Reconfigurar STA
+    wifi_config_t sta_config = {0};
+    strncpy((char *)sta_config.sta.ssid, ssid, sizeof(sta_config.sta.ssid)-1);
+    strncpy((char *)sta_config.sta.password, pass, sizeof(sta_config.sta.password)-1);
+    sta_config.sta.threshold.authmode = WIFI_AUTH_OPEN;
+    sta_config.sta.sae_pwe_h2e = WPA3_SAE_PWE_UNSPECIFIED;
+    sta_config.sta.pmf_cfg.capable = true;
+    sta_config.sta.pmf_cfg.required = false;
+
+    ESP_ERROR_CHECK(esp_wifi_set_config(WIFI_IF_STA, &sta_config));
+    ESP_ERROR_CHECK(esp_wifi_disconnect());
+    ESP_ERROR_CHECK(esp_wifi_connect());
+
+    const char *resp =
+        "<html><body><h3>Guardado!</h3>"
+        "<p>El ESP32 intentar&aacute; conectarse a la nueva red.</p>"
+        "<a href=\"/\">Volver</a>"
+        "</body></html>";
+
+    httpd_resp_set_type(req, "text/html");
+    httpd_resp_send(req, resp, HTTPD_RESP_USE_STRLEN);
+    return ESP_OK;
+}
+
+// Prototipos de los handlers que ya definiste antes
+static esp_err_t root_get_handler(httpd_req_t *req);
+static esp_err_t save_get_handler(httpd_req_t *req);
+
+void http_server_start(void)
+{
+    httpd_config_t httpd_cfg = HTTPD_DEFAULT_CONFIG();
+    httpd_cfg.server_port = 80;  // si querés cambiar el puerto
+
+    httpd_handle_t server = NULL;
+
+    if (httpd_start(&server, &httpd_cfg) == ESP_OK) {
+
+        httpd_uri_t uri_root = {
+            .uri      = "/",
+            .method   = HTTP_GET,
+            .handler  = root_get_handler,
+            .user_ctx = NULL
+        };
+        httpd_register_uri_handler(server, &uri_root);
+
+        httpd_uri_t uri_save = {
+            .uri      = "/save",
+            .method   = HTTP_GET,
+            .handler  = save_get_handler,
+            .user_ctx = NULL
+        };
+        httpd_register_uri_handler(server, &uri_save);
+
+        ESP_LOGI(TAG, "Servidor HTTP iniciado");
+    } else {
+        ESP_LOGE(TAG, "No se pudo iniciar HTTP server");
+    }
+}
+
+
 
 void wifi_event_handler(void *arg, esp_event_base_t event_base,
 						int32_t event_id, void *event_data) {
@@ -69,6 +245,7 @@ void wifi_event_handler(void *arg, esp_event_base_t event_base,
 		xEventGroupSetBits(s_wifi_event_group, WIFI_CONNECTED_BIT);
 	}
 }
+
 void wifi_init_apsta(void)
 {
     s_wifi_event_group = xEventGroupCreate();
@@ -76,7 +253,7 @@ void wifi_init_apsta(void)
     ESP_ERROR_CHECK(esp_netif_init());
     ESP_ERROR_CHECK(esp_event_loop_create_default());
 
-    // IMPORTANTE: crear ambas interfaces
+    // Ambas interfaces
     esp_netif_create_default_wifi_ap();
     esp_netif_create_default_wifi_sta();
 
@@ -92,7 +269,10 @@ void wifi_init_apsta(void)
         IP_EVENT, IP_EVENT_STA_GOT_IP, &wifi_event_handler, NULL,
         &instance_got_ip));
 
-    // ---- Config AP (siempre encendido) ----
+    // 1) Cargar credenciales NVS si existen
+    load_wifi_credentials_from_nvs();
+
+    // 2) Config AP
     wifi_config_t ap_config = {
         .ap = {
             .ssid = AP_SSID,
@@ -102,48 +282,50 @@ void wifi_init_apsta(void)
             .authmode = WIFI_AUTH_WPA_WPA2_PSK,
         },
     };
-
     if (strlen((char *)ap_config.ap.password) == 0) {
         ap_config.ap.authmode = WIFI_AUTH_OPEN;
     }
 
-    // ---- Config STA (como lo tenías) ----
-    wifi_config_t sta_config = {
-        .sta =
-            {
-                .threshold.authmode = WIFI_AUTH_OPEN,
-                .sae_pwe_h2e = WPA3_SAE_PWE_UNSPECIFIED,
-                .pmf_cfg = {.capable = true, .required = false},
-            },
-    };
-    strncpy((char *)sta_config.sta.ssid, WIFI_SSID, sizeof(sta_config.sta.ssid) - 1);
-    strncpy((char *)sta_config.sta.password, WIFI_PASS, sizeof(sta_config.sta.password) - 1);
+    // 3) Config STA
+    wifi_config_t sta_config = { 0 };
+    sta_config.sta.threshold.authmode = WIFI_AUTH_OPEN;
+    sta_config.sta.sae_pwe_h2e = WPA3_SAE_PWE_UNSPECIFIED;
+    sta_config.sta.pmf_cfg.capable = true;
+    sta_config.sta.pmf_cfg.required = false;
 
-    // ---- Modo AP+STA ----
+    if (g_have_credentials) {
+        strncpy((char *)sta_config.sta.ssid, g_ssid, sizeof(sta_config.sta.ssid)-1);
+        strncpy((char *)sta_config.sta.password, g_pass, sizeof(sta_config.sta.password)-1);
+        ESP_LOGI(TAG, "Usando credenciales NVS para STA");
+    } else {
+        strncpy((char *)sta_config.sta.ssid, WIFI_SSID, sizeof(sta_config.sta.ssid)-1);
+        strncpy((char *)sta_config.sta.password, WIFI_PASS, sizeof(sta_config.sta.password)-1);
+        ESP_LOGI(TAG, "Usando credenciales por defecto para STA");
+    }
+
     ESP_ERROR_CHECK(esp_wifi_set_mode(WIFI_MODE_APSTA));
     ESP_ERROR_CHECK(esp_wifi_set_config(WIFI_IF_AP, &ap_config));
     ESP_ERROR_CHECK(esp_wifi_set_config(WIFI_IF_STA, &sta_config));
     ESP_ERROR_CHECK(esp_wifi_start());
 
     ESP_LOGI(TAG, "AP levantado: SSID:%s  PASS:%s", AP_SSID, AP_PASS);
-    ESP_LOGI(TAG, "Conectando STA a SSID:%s ...", WIFI_SSID);
+    ESP_LOGI(TAG, "Esperando conexión STA...");
 
-    // Forzamos conexión STA (el AP queda siempre prendido)
-    //ESP_ERROR_CHECK(esp_wifi_connect());
+    // OJO: NO llamamos esp_wifi_connect() acá si ya lo hace el handler en WIFI_EVENT_STA_START
 
-    // Esperar resultado de la STA (esto no afecta al AP)
     EventBits_t bits = xEventGroupWaitBits(
         s_wifi_event_group, WIFI_CONNECTED_BIT | WIFI_FAIL_BIT, pdFALSE,
         pdFALSE, pdMS_TO_TICKS(20000));
 
     if (bits & WIFI_CONNECTED_BIT) {
-        ESP_LOGI(TAG, "STA conectada al WiFi");
+        ESP_LOGI(TAG, "STA conectada");
     } else if (bits & WIFI_FAIL_BIT) {
         ESP_LOGE(TAG, "STA: No se pudo conectar al WiFi");
     } else {
         ESP_LOGE(TAG, "STA: Timeout esperando WiFi");
     }
 }
+
 
 esp_err_t http_event_handler(esp_http_client_event_t *evt) {
 	static char *accum = NULL;
