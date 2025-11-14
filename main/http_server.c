@@ -4,6 +4,7 @@
 #include "esp_http_client.h"
 #include "esp_netif.h"
 #include "esp_sntp.h"
+#include "esp_system.h"
 #include "esp_wifi.h"
 #include "freertos/FreeRTOS.h"
 #include "freertos/event_groups.h"
@@ -178,12 +179,14 @@ static esp_err_t save_get_handler(httpd_req_t *req)
 
     const char *resp =
         "<html><body><h3>Guardado!</h3>"
-        "<p>El ESP32 intentar&aacute; conectarse a la nueva red.</p>"
+        "<p>El ESP32 intentar&aacute; conectarse a la nueva red luego del reinicio.</p>"
         "<a href=\"/\">Volver</a>"
         "</body></html>";
 
     httpd_resp_set_type(req, "text/html");
     httpd_resp_send(req, resp, HTTPD_RESP_USE_STRLEN);
+    vTaskDelay(pdMS_TO_TICKS(1000));
+    esp_restart();
     return ESP_OK;
 }
 
