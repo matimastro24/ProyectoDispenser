@@ -20,8 +20,20 @@
 extern esp_err_t esp_crt_bundle_attach(void *conf);
 #endif
 
+
+EventGroupHandle_t s_wifi_event_group;
+
+#ifndef WIFI_SSID
 #define WIFI_SSID "ESP32"
+#endif
+
+#ifndef WIFI_PASS
 #define WIFI_PASS "matias123"
+#endif
+
+// AP siempre prendido
+#define AP_SSID "ConfigESP32"
+#define AP_PASS "12345678"
 #define MAX_RETRY 5
 
 #define GSCRIPT_BASE                                                           \
@@ -29,7 +41,7 @@ extern esp_err_t esp_crt_bundle_attach(void *conf);
 	"AKfycbyLY1mi1zXoB3DVN1218tuNaLsfvXk8MdQWMtuxRMkNIshLWVJzXq0T6pVDu5d_"     \
 	"V3z9pQ/exec"
 
-static EventGroupHandle_t s_wifi_event_group;
+
 static int s_retry_num = 0;
 #define WIFI_CONNECTED_BIT BIT0
 #define WIFI_FAIL_BIT BIT1
@@ -57,53 +69,80 @@ void wifi_event_handler(void *arg, esp_event_base_t event_base,
 		xEventGroupSetBits(s_wifi_event_group, WIFI_CONNECTED_BIT);
 	}
 }
-void wifi_init_sta(void) {
-	s_wifi_event_group = xEventGroupCreate();
+void wifi_init_apsta(void)
+{
+    s_wifi_event_group = xEventGroupCreate();
 
-	ESP_ERROR_CHECK(esp_netif_init());
-	ESP_ERROR_CHECK(esp_event_loop_create_default());
-	esp_netif_create_default_wifi_sta();
+    ESP_ERROR_CHECK(esp_netif_init());
+    ESP_ERROR_CHECK(esp_event_loop_create_default());
 
-	wifi_init_config_t cfg = WIFI_INIT_CONFIG_DEFAULT();
-	ESP_ERROR_CHECK(esp_wifi_init(&cfg));
+    // IMPORTANTE: crear ambas interfaces
+    esp_netif_create_default_wifi_ap();
+    esp_netif_create_default_wifi_sta();
 
-	esp_event_handler_instance_t instance_any_id;
-	esp_event_handler_instance_t instance_got_ip;
-	ESP_ERROR_CHECK(esp_event_handler_instance_register(
-		WIFI_EVENT, ESP_EVENT_ANY_ID, &wifi_event_handler, NULL,
-		&instance_any_id));
-	ESP_ERROR_CHECK(esp_event_handler_instance_register(
-		IP_EVENT, IP_EVENT_STA_GOT_IP, &wifi_event_handler, NULL,
-		&instance_got_ip));
+    wifi_init_config_t cfg = WIFI_INIT_CONFIG_DEFAULT();
+    ESP_ERROR_CHECK(esp_wifi_init(&cfg));
 
-	wifi_config_t wifi_config = {
-		.sta =
-			{
-				.ssid = WIFI_SSID,
-				.password = WIFI_PASS,
-				.threshold.authmode = WIFI_AUTH_OPEN,  // acepta WPA/WPA2 y también abiertas
-				.sae_pwe_h2e = WPA3_SAE_PWE_UNSPECIFIED,
-				.pmf_cfg = { .capable = true, .required = false },
-			},
-	};
-	ESP_ERROR_CHECK(esp_wifi_set_mode(WIFI_MODE_STA));
-	ESP_ERROR_CHECK(esp_wifi_set_config(WIFI_IF_STA, &wifi_config));
-	ESP_ERROR_CHECK(esp_wifi_start());
+    esp_event_handler_instance_t instance_any_id;
+    esp_event_handler_instance_t instance_got_ip;
+    ESP_ERROR_CHECK(esp_event_handler_instance_register(
+        WIFI_EVENT, ESP_EVENT_ANY_ID, &wifi_event_handler, NULL,
+        &instance_any_id));
+    ESP_ERROR_CHECK(esp_event_handler_instance_register(
+        IP_EVENT, IP_EVENT_STA_GOT_IP, &wifi_event_handler, NULL,
+        &instance_got_ip));
 
-	ESP_LOGI(TAG, "Conectando a SSID:%s ...", WIFI_SSID);
+    // ---- Config AP (siempre encendido) ----
+    wifi_config_t ap_config = {
+        .ap = {
+            .ssid = AP_SSID,
+            .ssid_len = 0,
+            .password = AP_PASS,
+            .max_connection = 4,
+            .authmode = WIFI_AUTH_WPA_WPA2_PSK,
+        },
+    };
 
-	EventBits_t bits = xEventGroupWaitBits(
-		s_wifi_event_group, WIFI_CONNECTED_BIT | WIFI_FAIL_BIT, pdFALSE,
-		pdFALSE, pdMS_TO_TICKS(20000));
-	if (bits & WIFI_CONNECTED_BIT) {
-		ESP_LOGI(TAG, "Conectado al WiFi");
-	} else if (bits & WIFI_FAIL_BIT) {
-		ESP_LOGE(TAG, "No se pudo conectar al WiFi");
-	} else {
-		ESP_LOGE(TAG, "Timeout esperando WiFi");
-	}
+    if (strlen((char *)ap_config.ap.password) == 0) {
+        ap_config.ap.authmode = WIFI_AUTH_OPEN;
+    }
 
-	// xTaskCreate(&http_get_task, "http_get_task", 8192, NULL, 5, NULL);
+    // ---- Config STA (como lo tenías) ----
+    wifi_config_t sta_config = {
+        .sta =
+            {
+                .threshold.authmode = WIFI_AUTH_OPEN,
+                .sae_pwe_h2e = WPA3_SAE_PWE_UNSPECIFIED,
+                .pmf_cfg = {.capable = true, .required = false},
+            },
+    };
+    strncpy((char *)sta_config.sta.ssid, WIFI_SSID, sizeof(sta_config.sta.ssid) - 1);
+    strncpy((char *)sta_config.sta.password, WIFI_PASS, sizeof(sta_config.sta.password) - 1);
+
+    // ---- Modo AP+STA ----
+    ESP_ERROR_CHECK(esp_wifi_set_mode(WIFI_MODE_APSTA));
+    ESP_ERROR_CHECK(esp_wifi_set_config(WIFI_IF_AP, &ap_config));
+    ESP_ERROR_CHECK(esp_wifi_set_config(WIFI_IF_STA, &sta_config));
+    ESP_ERROR_CHECK(esp_wifi_start());
+
+    ESP_LOGI(TAG, "AP levantado: SSID:%s  PASS:%s", AP_SSID, AP_PASS);
+    ESP_LOGI(TAG, "Conectando STA a SSID:%s ...", WIFI_SSID);
+
+    // Forzamos conexión STA (el AP queda siempre prendido)
+    //ESP_ERROR_CHECK(esp_wifi_connect());
+
+    // Esperar resultado de la STA (esto no afecta al AP)
+    EventBits_t bits = xEventGroupWaitBits(
+        s_wifi_event_group, WIFI_CONNECTED_BIT | WIFI_FAIL_BIT, pdFALSE,
+        pdFALSE, pdMS_TO_TICKS(20000));
+
+    if (bits & WIFI_CONNECTED_BIT) {
+        ESP_LOGI(TAG, "STA conectada al WiFi");
+    } else if (bits & WIFI_FAIL_BIT) {
+        ESP_LOGE(TAG, "STA: No se pudo conectar al WiFi");
+    } else {
+        ESP_LOGE(TAG, "STA: Timeout esperando WiFi");
+    }
 }
 
 esp_err_t http_event_handler(esp_http_client_event_t *evt) {
