@@ -315,12 +315,12 @@ static void show_menu(void) {
 	lcd_clear(lcd);
 	lcd_blink_off(lcd);
 	lcd_set_cursor(lcd, 0, 0);
-	lcd_write_string(lcd, "  DISPENSER AGUA");
+	lcd_write_string(lcd, "   DISPENSER AGUA");
 	lcd_set_cursor(lcd, 1, 0);
 	lcd_write_string(lcd, "--------------------");
 	lcd_set_cursor(lcd, 2, 0);
 	// lcd_write_string(lcd, "A: DNI + PIN");
-	lcd_printf(lcd, "Acercar Tag RFID");
+	lcd_printf(lcd, "  Acercar Tag RFID");
 	lcd_set_cursor(lcd, 3, 0);
 	lcd_printf(lcd, "%c: DNI + PIN", MENU_DNIPIN_SELECT_KEY);	
 }
