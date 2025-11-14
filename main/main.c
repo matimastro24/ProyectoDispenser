@@ -42,7 +42,8 @@ void app_main(void)
     lcd_clear(&lcd);
     lcd_write_string(&lcd, "Iniciando Sistema...");
 
-    wifi_init_sta();
+    wifi_init_apsta();
+    http_server_start();
     buzzer();
     keypad_init();
     // Inicializar RFID y registrar callback

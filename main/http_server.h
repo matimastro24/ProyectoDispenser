@@ -3,14 +3,21 @@
 #include "esp_err.h"
 #include "esp_http_client.h"
 #include "cJSON.h"   
+#include "freertos/event_groups.h"
 
  void wifi_event_handler(void *arg, esp_event_base_t event_base,
                                int32_t event_id, void *event_data);
+
+#define WIFI_CONNECTED_BIT BIT0
+#define WIFI_FAIL_BIT      BIT1
                           
-void wifi_init_sta(void);
+void wifi_init_apsta(void);
 esp_err_t http_event_handler(esp_http_client_event_t *evt);
 void http_get_task(void *pv);
 void http_get_uid_async(const char *uid_hex_or_num);
 void http_get_dni_pin_async(const char *dni, const char *pin);
 void procesar_json(const char *json_str);
 bool wifi_is_connected(void);
+void http_server_start(void); // arranca el servidor web		
+extern EventGroupHandle_t s_wifi_event_group;
+
