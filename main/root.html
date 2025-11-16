@@ -1,0 +1,110 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Configuracion WiFi</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <meta charset='UTF-8'>
+    <style>
+        body { font-family: Arial, sans-serif; margin: 20px; background-color: #f4f4f4; }
+        div { background: #fff; border-radius: 8px; padding: 20px; box-shadow: 0 4px 8px rgba(0,0,0,0.1); }
+        h2 { text-align: center; color: #333; }
+        form { display: flex; flex-direction: column; }
+        label { margin-top: 10px; font-weight: bold; color: #555; }
+        input[type="text"], input[type="password"], select {
+            padding: 10px; margin-top: 5px; border-radius: 4px; border: 1px solid #ccc;
+        }
+        input[type="submit"] {
+            background-color: #007bff; color: white; padding: 12px; border: none;
+            border-radius: 4px; cursor: pointer; margin-top: 20px; font-size: 16px;
+        }
+        input[type="submit"]:hover { background-color: #0056b3; }
+        p { text-align: center; color: #777; margin-top: 20px; }
+    </style>
+</head>
+<body>
+    <div>
+        <h2>Configuraci&oacute;n WiFi</h2>
+        
+        <form action="/save" method="POST">
+            
+            <label for="ssid-select">Red WiFi (SSID):</label>
+            <select id="ssid-select" name="ssid">
+                <option value="">Cargando redes...</option>
+            </select>
+            
+            <label for="pass-field">Password (Clave):</label>
+            <input type="password" name="pass" id="pass-field">
+            
+            <input type="submit" value="Guardar y Conectar">
+        </form>
+        
+        <p>Conectado al AP: <b>ConfigESP32</b> (IP: 192.168.4.1)</p>
+    </div>
+
+    <script>
+        // Esta función se llama para cargar las redes guardadas
+        async function cargarCredenciales() {
+            try {
+                // 1. Pedimos las credenciales guardadas a la API
+                const response = await fetch('/api/credentials');
+                const creds = await response.json();
+
+                // 2. Rellenamos los campos
+                document.getElementById('pass-field').value = creds.pass;
+                
+                // (Para el SSID, lo pondremos como 'seleccionado'
+                //  después de que el escaneo termine)
+                return creds.ssid;
+
+            } catch (e) {
+                console.error("Error al cargar credenciales", e);
+                return "";
+            }
+        }
+
+        // Esta función se llama para escanear y llenar el <select>
+        async function cargarRedes(ssidGuardado) {
+            const selectEl = document.getElementById('ssid-select');
+            selectEl.innerHTML = '<option value="">Buscando...</option>';
+
+            try {
+                // 1. Llamar a nuestra API de escaneo del ESP32
+                const response = await fetch('/api/scan');
+                const redes = await response.json();
+
+                if (redes.length === 0) {
+                    selectEl.innerHTML = '<option value="">No se encontraron redes</option>';
+                    return;
+                }
+
+                // 2. Llenar el <select>
+                selectEl.innerHTML = ''; // Limpiar "Buscando..."
+                redes.forEach(red => {
+                    const option = document.createElement('option');
+                    option.value = red.ssid;
+                    option.textContent = `${red.ssid} (Potencia: ${red.rssi})`;
+                    
+                    // Si este SSID es el que teníamos guardado, lo pre-seleccionamos
+                    if (red.ssid === ssidGuardado) {
+                        option.selected = true;
+                    }
+                    
+                    selectEl.appendChild(option);
+                });
+
+            } catch (error) {
+                console.error('Error al cargar redes:', error);
+                selectEl.innerHTML = '<option value="">Error al cargar</option>';
+            }
+        }
+
+        // Al cargar la página, ejecutar ambas funciones
+        window.onload = async () => {
+            // Primero vemos si hay algo guardado
+            const ssidGuardado = await cargarCredenciales();
+            // Luego escaneamos y pasamos el nombre guardado
+            await cargarRedes(ssidGuardado);
+        };
+    </script>
+</body>
+</html>

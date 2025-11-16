@@ -57,8 +57,11 @@ static int s_retry_num = 0;
 #define WIFI_CONNECTED_BIT BIT0
 #define WIFI_FAIL_BIT BIT1
 
-static const char *TAG = "HTTP_SERVER";
+// Búfer para almacenar temporalmente los datos del POST
+#define MAX_POST_DATA_LEN 256
 
+static const char *TAG = "HTTP_SERVER";
+/*
 static const char *HTML_FORM =
 "<!DOCTYPE html>"
 "<html><head><meta charset='UTF-8'><title>Config WiFi</title></head>"
@@ -71,6 +74,11 @@ static const char *HTML_FORM =
 "</form>"
 "<p>Conectado al AP: <b>ConfigESP32</b> (IP: 192.168.4.1)</p>"
 "</body></html>";
+*/
+
+// Puntero para el nuevo root.html incrustado
+extern const char root_start[] asm("_binary_root_html_start");
+extern const char root_end[]   asm("_binary_root_html_end");
 
 static void load_wifi_credentials_from_nvs(void)
 {
@@ -124,7 +132,7 @@ static void save_wifi_credentials_to_nvs(const char *ssid, const char *pass)
 
     ESP_LOGI(TAG, "Credenciales guardadas en NVS");
 }
-
+/*
 static esp_err_t root_get_handler(httpd_req_t *req)
 {
     char resp[1024];
@@ -137,7 +145,102 @@ static esp_err_t root_get_handler(httpd_req_t *req)
     httpd_resp_send(req, resp, HTTPD_RESP_USE_STRLEN);
     return ESP_OK;
 }
+*/
+static esp_err_t root_get_handler(httpd_req_t *req)
+{
+    // Ya no usamos snprintf, solo enviamos el archivo
+    const uint32_t root_len = root_end - root_start;
+    ESP_LOGI(TAG, "Sirviendo root.html");
+    httpd_resp_set_type(req, "text/html");
+    httpd_resp_send(req, root_start, root_len);
+    return ESP_OK;
+}
+/**
+ * @brief API (GET /api/scan) - Escanea redes y devuelve JSON
+ */
+static esp_err_t api_scan_get_handler(httpd_req_t *req)
+{
+    ESP_LOGI(TAG, "API: Iniciando escaneo de Wi-Fi...");
+    
+    // 1. Configurar y realizar el escaneo
+    wifi_scan_config_t scan_config = {
+        .ssid = 0,
+        .bssid = 0,
+        .channel = 0,
+        .show_hidden = false
+    };
+    
+    // Iniciar escaneo (bloqueante). Esto funciona gracias al modo APSTA.
+    if (esp_wifi_scan_start(&scan_config, true) != ESP_OK) {
+        ESP_LOGE(TAG, "API: Falló esp_wifi_scan_start");
+        httpd_resp_send_500(req);
+        return ESP_FAIL;
+    }
 
+    // 2. Obtener los resultados
+    uint16_t ap_count = 0;
+    esp_wifi_scan_get_ap_num(&ap_count);
+    if (ap_count == 0) {
+        ESP_LOGI(TAG, "API: No se encontraron redes.");
+        httpd_resp_send(req, "[]", HTTPD_RESP_USE_STRLEN);
+        return ESP_OK;
+    }
+
+    wifi_ap_record_t *ap_list = (wifi_ap_record_t *)malloc(sizeof(wifi_ap_record_t) * ap_count);
+    if (ap_list == NULL) {
+        httpd_resp_send_500(req);
+        return ESP_FAIL;
+    }
+    
+    ESP_ERROR_CHECK(esp_wifi_scan_get_ap_records(&ap_count, ap_list));
+    
+    // 3. Crear la respuesta JSON
+    cJSON *root = cJSON_CreateArray();
+    for (int i = 0; i < ap_count; i++) {
+        cJSON *ap_json = cJSON_CreateObject();
+        cJSON_AddStringToObject(ap_json, "ssid", (const char *)ap_list[i].ssid);
+        cJSON_AddNumberToObject(ap_json, "rssi", ap_list[i].rssi);
+        cJSON_AddItemToArray(root, ap_json);
+    }
+    
+    const char *json_str = cJSON_Print(root);
+
+    // 4. Enviar la respuesta
+    httpd_resp_set_type(req, "application/json");
+    httpd_resp_send(req, json_str, HTTPD_RESP_USE_STRLEN);
+
+    // 5. Liberar memoria
+    free(ap_list);
+    cJSON_Delete(root);
+    free((void *)json_str);
+    
+    return ESP_OK;
+}
+
+/**
+ * @brief API (GET /api/credentials) - Devuelve las credenciales guardadas
+ */
+static esp_err_t api_credentials_get_handler(httpd_req_t *req)
+{
+    // Usamos las variables globales que ya tenías
+    const char *ssid = g_have_credentials ? g_ssid : "";
+    const char *pass = g_have_credentials ? g_pass : "";
+
+    cJSON *root = cJSON_CreateObject();
+    cJSON_AddStringToObject(root, "ssid", ssid);
+    cJSON_AddStringToObject(root, "pass", pass);
+
+    const char *json_str = cJSON_Print(root);
+    
+    httpd_resp_set_type(req, "application/json");
+    httpd_resp_send(req, json_str, HTTPD_RESP_USE_STRLEN);
+
+    cJSON_Delete(root);
+    free((void *)json_str);
+
+    return ESP_OK;
+}
+/*
 static esp_err_t save_get_handler(httpd_req_t *req)
 {
     char ssid[MAX_SSID_LEN + 1] = {0};
@@ -189,6 +292,95 @@ static esp_err_t save_get_handler(httpd_req_t *req)
     esp_restart();
     return ESP_OK;
 }
+*/
+// Búfer para almacenar temporalmente los datos del POST
+#define MAX_POST_DATA_LEN 256
+
+static esp_err_t save_post_handler(httpd_req_t *req)
+{
+    char buf[MAX_POST_DATA_LEN];
+    int ret, remaining = req->content_len;
+
+    // 1. Verificar si los datos no son demasiado largos
+    if (remaining > MAX_POST_DATA_LEN) {
+        ESP_LOGE(TAG, "Datos del POST demasiado largos");
+        httpd_resp_send_err(req, HTTPD_400_BAD_REQUEST, "Datos demasiado largos");
+        return ESP_FAIL;
+    }
+
+    // 2. Leer los datos (el "body") de la petición
+    // 'buf' contendrá: "ssid=MiRed&pass=MiClave123"
+    ret = httpd_req_recv(req, buf, remaining);
+    if (ret <= 0) {
+        if (ret == HTTPD_SOCK_ERR_TIMEOUT) {
+            httpd_resp_send_408(req);
+        }
+        return ESP_FAIL;
+    }
+
+    // 3. Añadir un terminador nulo para que sea un string C
+    buf[ret] = '\0'; 
+
+    // 4. Parsear (extraer) los valores de "ssid" y "pass"
+    char ssid[MAX_SSID_LEN + 1] = {0};
+    char pass[MAX_PASS_LEN + 1] = {0};
+
+    if (httpd_query_key_value(buf, "ssid", ssid, sizeof(ssid)) != ESP_OK) {
+        ESP_LOGE(TAG, "No se encontró el campo 'ssid'");
+        httpd_resp_send_err(req, HTTPD_400_BAD_REQUEST, "Falta el campo SSID");
+        return ESP_FAIL;
+    }
+
+    if (httpd_query_key_value(buf, "pass", pass, sizeof(pass)) != ESP_OK) {
+        ESP_LOGE(TAG, "No se encontró el campo 'pass'");
+        httpd_resp_send_err(req, HTTPD_400_BAD_REQUEST, "Falta el campo Password");
+        return ESP_FAIL;
+    }
+
+    // --- A PARTIR DE AQUÍ, ES TU MISMA LÓGICA DE 'save_get_handler' ---
+
+    ESP_LOGI(TAG, "Nuevas credenciales (vía POST): ssid='%s'", ssid);
+    if (strlen(ssid) == 0) {
+        httpd_resp_sendstr(req, "SSID vacío, volver atrás");
+        return ESP_OK;
+    }
+
+    // Guardar en NVS
+    save_wifi_credentials_to_nvs(ssid, pass);
+
+    // Reconfigurar STA
+    wifi_config_t sta_config = {0};
+    strncpy((char *)sta_config.sta.ssid, ssid, sizeof(sta_config.sta.ssid)-1);
+    strncpy((char *)sta_config.sta.password, pass, sizeof(sta_config.sta.password)-1);
+    sta_config.sta.threshold.authmode = WIFI_AUTH_OPEN;
+    sta_config.sta.sae_pwe_h2e = WPA3_SAE_PWE_UNSPECIFIED;
+    sta_config.sta.pmf_cfg.capable = true;
+    sta_config.sta.pmf_cfg.required = false;
+
+    ESP_ERROR_CHECK(esp_wifi_set_config(WIFI_IF_STA, &sta_config));
+    ESP_ERROR_CHECK(esp_wifi_disconnect());
+    ESP_ERROR_CHECK(esp_wifi_connect());
+
+    // NOTA: No podés enviar un HTML de respuesta Y reiniciar.
+    // El reinicio matará la conexión antes de que el usuario vea la página.
+    // Es mejor enviar la respuesta, esperar un segundo, y LUEGO reiniciar.
+    
+    const char *resp =
+        "<html><body><h3>¡Guardado!</h3>"
+        "<p>El ESP32 se reiniciará para conectarse a la nueva red.</p>"
+        "</body></html>";
+
+    httpd_resp_set_type(req, "text/html");
+    httpd_resp_send(req, resp, HTTPD_RESP_USE_STRLEN);
+    
+    // Dar 1 segundo para que el navegador reciba la respuesta
+    vTaskDelay(pdMS_TO_TICKS(1000));
+    
+    // Reiniciar
+    esp_restart();
+    
+    return ESP_OK;
+}
 
 // Prototipos de los handlers que ya definiste antes
 static esp_err_t root_get_handler(httpd_req_t *req);
@@ -210,7 +402,7 @@ void http_server_start(void)
             .user_ctx = NULL
         };
         httpd_register_uri_handler(server, &uri_root);
-
+        /*
         httpd_uri_t uri_save = {
             .uri      = "/save",
             .method   = HTTP_GET,
@@ -218,7 +410,29 @@ void http_server_start(void)
             .user_ctx = NULL
         };
         httpd_register_uri_handler(server, &uri_save);
+        */
+        httpd_uri_t uri_api_scan = {
+            .uri      = "/api/scan",
+            .method   = HTTP_GET,
+            .handler  = api_scan_get_handler,
+            .user_ctx = NULL
+        };
+        httpd_register_uri_handler(server, &uri_api_scan);
 
+        httpd_uri_t uri_api_creds = {
+            .uri      = "/api/credentials",
+            .method   = HTTP_GET,
+            .handler  = api_credentials_get_handler,
+            .user_ctx = NULL
+        };
+        httpd_register_uri_handler(server, &uri_api_creds);
+        httpd_uri_t uri_save = {
+            .uri      = "/save",
+            .method   = HTTP_POST,  // <-- CAMBIAR A POST
+            .handler  = save_post_handler, // <-- APUNTAR A LA NUEVA FUNCIÓN
+            .user_ctx = NULL
+        };
+        httpd_register_uri_handler(server, &uri_save);
         ESP_LOGI(TAG, "Servidor HTTP iniciado");
     } else {
         ESP_LOGE(TAG, "No se pudo iniciar HTTP server");
