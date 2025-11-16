@@ -10,6 +10,7 @@
 
 // Estados del sistema
 typedef enum {
+    STATE_PROVISIONING,   // No hay coneccion wifi
     STATE_MENU,           // Menú inicial
     STATE_ENTER_DNI,      // Ingresando DNI
     STATE_ENTER_PIN,      // Ingresando PIN
@@ -29,8 +30,11 @@ typedef struct {
 // Inicialización de la máquina de estados
 void state_machine_init(lcd_t *lcd_ptr, rc522_handle_t *scanner_ptr);
 
-// Actualización del estado (debe llamarse en el loop principal)
-void state_machine_update(void);
+// Actualización del estado cuando hay wifi 
+void state_machine_update_w_wifi(void);
+
+// Actualización del cuando no hay wifi 
+void state_machine_update_no_wifi(void);
 
 // Callback para teclas presionadas
 void state_machine_key_pressed(char key);

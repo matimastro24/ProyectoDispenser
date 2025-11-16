@@ -24,9 +24,7 @@
 #define SHOW_USER_EXTRACT_KEY 'A'
 #define SHOW_USER_CANCEL_KEY 'C'
 
-
 #define DISPENSING_STOP_KEY 'D'
-
 
 static const char *TAG = "STATE_MACHINE";
 
@@ -44,18 +42,24 @@ static uint8_t pin_index = 0;
 // Datos del usuario validado
 static user_data_t user_data = {0};
 
-//esta bansedara se pone en true cunado se ejecuta state_machine_validation_result
+/*
+esta bandera se debe poner en true cunado se ejecuta
+state_machine_validation_result es decir, cuando se parsea el json recibido,
+independientemente del contenido del json
+*/
 static bool validation_complete = false;
 
-//Esta bandera se pone true si se puedo extraer nombre, apellido, extracciones
-//durante la consulta http
-//cualquier otro caso esta en false
+/*
+esta bandera se debe poner en true si despues de parsear el json se pudo obetenr
+correctamente del mismo los datos: nombre, apellido y extracciones
+*/
 static bool validation_success = false;
 
 // Control de timeouts
 static TickType_t state_start_time = 0;
 
 // Prototipos de funciones privadas
+static void show_provisioning(void);
 static void show_menu(void);
 static void show_enter_dni(void);
 static void show_enter_pin(void);
@@ -88,9 +92,13 @@ void state_machine_init(lcd_t *lcd_ptr, rc522_handle_t *scanner_ptr) {
 	ESP_LOGI(TAG, "Máquina de estados inicializada");
 }
 
-void state_machine_update(void) {
+void state_machine_update_w_wifi(void) {
+
 	// Verificar timeouts según el estado
 	switch (current_state) {
+	case STATE_PROVISIONING:
+		change_state(STATE_MENU);
+		break;
 	case STATE_ENTER_DNI:
 	case STATE_ENTER_PIN:
 	case STATE_SHOW_USER:
@@ -100,7 +108,56 @@ void state_machine_update(void) {
 			change_state(STATE_MENU);
 		}
 		break;
+	case STATE_VALIDATING:
+		if (validation_complete) {
+			if (validation_success) {
+				change_state(STATE_SHOW_USER);
+			} else {
+				show_error("Usuario no valido");
+				vTaskDelay(pdMS_TO_TICKS(3000));
+				change_state(STATE_MENU);
+			}
+		} else if (check_timeout(VALIDATING_MAX_TIME_MS)) {
+			show_error("Timeout validacion");
+			vTaskDelay(pdMS_TO_TICKS(2000));
+			change_state(STATE_MENU);
+		}
+		break;
 
+	case STATE_DISPENSING:
+		if (check_timeout(DISPENSE_MAX_TIME_MS)) {
+			deactivate_dispenser();
+			lcd_clear(lcd);
+			lcd_set_cursor(lcd, 1, 0);
+			lcd_write_string(lcd, "Tiempo maximo");
+			lcd_set_cursor(lcd, 2, 0);
+			lcd_write_string(lcd, "alcanzado");
+			vTaskDelay(pdMS_TO_TICKS(2000));
+			change_state(STATE_MENU);
+		}
+		break;
+
+	default:
+		break;
+	}
+}
+
+void state_machine_update_no_wifi(void) {
+
+	// Verificar timeouts según el estado
+	switch (current_state) {
+	case STATE_MENU:
+	case STATE_ENTER_DNI:
+	case STATE_ENTER_PIN:
+		change_state(STATE_PROVISIONING);
+		break;
+	case STATE_SHOW_USER:
+		if (check_timeout(TIMEOUT_USER_INPUT_MS)) {
+			show_error("Timeout");
+			vTaskDelay(pdMS_TO_TICKS(2000));
+			change_state(STATE_MENU);
+		}
+		break;
 	case STATE_VALIDATING:
 		if (validation_complete) {
 			if (validation_success) {
@@ -250,6 +307,9 @@ system_state_t state_machine_get_state(void) { return current_state; }
 
 // ============= FUNCIONES PRIVADAS =============
 
+/*
+cambia el estado de la maquina de estados
+*/
 static void change_state(system_state_t new_state) {
 	current_state = new_state;
 	rc522_pause(*scanner);
@@ -262,6 +322,9 @@ static void change_state(system_state_t new_state) {
 
 	// Mostrar la pantalla correspondiente al nuevo estado
 	switch (new_state) {
+	case STATE_PROVISIONING:
+		show_provisioning();
+		break;
 	case STATE_MENU:
 		show_menu();
 		rc522_start(*scanner);
@@ -311,6 +374,13 @@ static void deactivate_dispenser(void) {
 	ESP_LOGI(TAG, "Dispensador DESACTIVADO");
 }
 
+static void show_provisioning(void) {
+	lcd_clear(lcd);
+	lcd_blink_off(lcd);
+	lcd_set_cursor(lcd, 0, 0);
+	lcd_write_string(lcd, "ERROR CONEXION WIFI!");
+}
+
 static void show_menu(void) {
 	lcd_clear(lcd);
 	lcd_blink_off(lcd);
@@ -322,9 +392,8 @@ static void show_menu(void) {
 	// lcd_write_string(lcd, "A: DNI + PIN");
 	lcd_printf(lcd, "  Acercar Tag RFID");
 	lcd_set_cursor(lcd, 3, 0);
-	lcd_printf(lcd, "%c: DNI + PIN", MENU_DNIPIN_SELECT_KEY);	
+	lcd_printf(lcd, "%c: DNI + PIN", MENU_DNIPIN_SELECT_KEY);
 }
-
 
 static void show_enter_dni(void) {
 	lcd_clear(lcd);
@@ -335,7 +404,7 @@ static void show_enter_dni(void) {
 			   ENTER_DNI_ACCEPT_KEY);
 	lcd_set_cursor(lcd, 3, 0);
 	lcd_printf(lcd, "%c:Cancelar", ENTER_DNI_CANCEL_KEY);
-	
+
 	lcd_set_cursor(lcd, 0, 0);
 	lcd_write_string(lcd, "DNI:");
 	lcd_set_cursor(lcd, 0, 5);
@@ -347,7 +416,7 @@ static void show_enter_pin(void) {
 	lcd_clear(lcd);
 
 	lcd_set_cursor(lcd, 2, 0);
-    lcd_printf(lcd, "%c:Borrar %c:Aceptar", ENTER_PIN_DELETE_KEY,
+	lcd_printf(lcd, "%c:Borrar %c:Aceptar", ENTER_PIN_DELETE_KEY,
 			   ENTER_PIN_ACCEPT_KEY);
 	lcd_set_cursor(lcd, 3, 0);
 	lcd_printf(lcd, "%c:Cancelar", ENTER_PIN_CANCEL_KEY);
@@ -376,9 +445,9 @@ static void show_user_info(void) {
 	lcd_printf(lcd, "Extracciones: %d", user_data.extracciones);
 	lcd_set_cursor(lcd, 2, 0);
 	if (user_data.extracciones > 0) {
-        lcd_printf(lcd, "%c:Iniciar extraccion", SHOW_USER_EXTRACT_KEY);
+		lcd_printf(lcd, "%c:Iniciar extraccion", SHOW_USER_EXTRACT_KEY);
 		lcd_set_cursor(lcd, 3, 0);
-        lcd_printf(lcd, "%c:Salir ", SHOW_USER_CANCEL_KEY);
+		lcd_printf(lcd, "%c:Salir ", SHOW_USER_CANCEL_KEY);
 	} else {
 		lcd_write_string(lcd, "Sin extracciones");
 		lcd_set_cursor(lcd, 3, 0);
@@ -394,12 +463,15 @@ static void show_dispensing(void) {
 	lcd_printf(lcd, "%c:Cancelar", DISPENSING_STOP_KEY);
 }
 
+/*
+muestra mensaje en la lcd
+*/
 static void show_error(const char *msg) {
 	lcd_clear(lcd);
 	lcd_blink_off(lcd);
 	lcd_set_cursor(lcd, 0, 0);
 	lcd_write_string(lcd, "    ERROR");
-	lcd_write_auto(lcd, msg,2,0);
+	lcd_write_auto(lcd, msg, 2, 0);
 
 	// Doble beep de error
 	setBuzzer(true);
