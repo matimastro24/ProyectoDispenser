@@ -15,6 +15,7 @@
 #include <string.h>
 #include "state_machine.h"
 #include "esp_http_server.h"
+#include "freertos/timers.h"
 
 #if CONFIG_MBEDTLS_CERTIFICATE_BUNDLE
 // forward declaration: evita incluir el header y alcanza para asignarlo en la
@@ -24,6 +25,7 @@ extern esp_err_t esp_crt_bundle_attach(void *conf);
 
 
 EventGroupHandle_t s_wifi_event_group;
+TimerHandle_t s_wifi_retry_timer;
 
 #define WIFI_NAMESPACE   "wifi_cfg"
 #define MAX_SSID_LEN     32
@@ -53,7 +55,6 @@ static bool g_have_credentials = false;
 	"V3z9pQ/exec"
 
 
-static int s_retry_num = 0;
 #define WIFI_CONNECTED_BIT BIT0
 #define WIFI_FAIL_BIT BIT1
 
@@ -138,11 +139,11 @@ static esp_err_t root_get_handler(httpd_req_t *req)
     char resp[1024];
     const char *ssid = g_have_credentials ? g_ssid : "";
     const char *pass = g_have_credentials ? g_pass : "";
-
     snprintf(resp, sizeof(resp), HTML_FORM, ssid, pass);
 
     httpd_resp_set_type(req, "text/html");
     httpd_resp_send(req, resp, HTTPD_RESP_USE_STRLEN);
+    //httpd_resp_send(req, root_start, root_len);
     return ESP_OK;
 }
 */
@@ -439,7 +440,15 @@ void http_server_start(void)
     }
 }
 
-
+/**
+ * @brief Se ejecuta 10 segundos después de perder la conexión.
+ * Intenta reconectar el STA.
+ */
+static void wifi_retry_timer_callback(TimerHandle_t xTimer)
+{
+    ESP_LOGI(TAG, "Temporizador de reintento: llamando a esp_wifi_connect()...");
+    esp_wifi_connect();
+}
 
 void wifi_event_handler(void *arg, esp_event_base_t event_base,
 						int32_t event_id, void *event_data) {
@@ -447,18 +456,12 @@ void wifi_event_handler(void *arg, esp_event_base_t event_base,
 		esp_wifi_connect();
 	} else if (event_base == WIFI_EVENT &&
 			   event_id == WIFI_EVENT_STA_DISCONNECTED) {
-		if (s_retry_num < MAX_RETRY) {
-			esp_wifi_connect();
-			s_retry_num++;
-			ESP_LOGW(TAG, "reintentando conexión al WiFi (%d/%d)", s_retry_num,
-					 MAX_RETRY);
-		} else {
-			xEventGroupSetBits(s_wifi_event_group, WIFI_FAIL_BIT);
-		}
+        xEventGroupClearBits(s_wifi_event_group, WIFI_CONNECTED_BIT);
+        ESP_LOGW(TAG, "Red Wi-Fi perdida. Reintentando conectar...");
+        xTimerStart(s_wifi_retry_timer, 0);
 	} else if (event_base == IP_EVENT && event_id == IP_EVENT_STA_GOT_IP) {
 		ip_event_got_ip_t *event = (ip_event_got_ip_t *)event_data;
 		ESP_LOGI(TAG, "IP obtenida: " IPSTR, IP2STR(&event->ip_info.ip));
-		s_retry_num = 0;
 		xEventGroupSetBits(s_wifi_event_group, WIFI_CONNECTED_BIT);
 	}
 }
@@ -528,19 +531,13 @@ void wifi_init_apsta(void)
     ESP_LOGI(TAG, "AP levantado: SSID:%s  PASS:%s", AP_SSID, AP_PASS);
     ESP_LOGI(TAG, "Esperando conexión STA...");
 
-    // OJO: NO llamamos esp_wifi_connect() acá si ya lo hace el handler en WIFI_EVENT_STA_START
-
-    EventBits_t bits = xEventGroupWaitBits(
-        s_wifi_event_group, WIFI_CONNECTED_BIT | WIFI_FAIL_BIT, pdFALSE,
-        pdFALSE, pdMS_TO_TICKS(20000));
-
-    if (bits & WIFI_CONNECTED_BIT) {
-        ESP_LOGI(TAG, "STA conectada");
-    } else if (bits & WIFI_FAIL_BIT) {
-        ESP_LOGE(TAG, "STA: No se pudo conectar al WiFi");
-    } else {
-        ESP_LOGE(TAG, "STA: Timeout esperando WiFi");
-    }
+    s_wifi_retry_timer = xTimerCreate(
+        "wifi_retry",           // Nombre (para debug)
+        pdMS_TO_TICKS(10000),   // 10000 ms
+        pdFALSE,                // No se auto-recarga (es "one-shot")
+        NULL,                   // Sin ID de timer
+        wifi_retry_timer_callback // La función que llamará
+    );
 }
 
 
