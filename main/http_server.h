@@ -14,10 +14,29 @@
 void wifi_init_apsta(void);
 esp_err_t http_event_handler(esp_http_client_event_t *evt);
 void http_get_task(void *pv);
-void http_get_uid_async(const char *uid_hex_or_num);
-void http_get_dni_pin_async(const char *dni, const char *pin);
-void procesar_json(const char *json_str);
 bool wifi_is_connected(void);
 void http_server_start(void); // arranca el servidor web		
 extern EventGroupHandle_t s_wifi_event_group;
+esp_err_t descargar_base_datos(void);
+/**
+ * @brief Obtener version de la DB local.
+ * @return [int] Version. En caso de que no haya nada devuelve 0.
+ * Y si falla abriendo la NVS tambien devuelve 0.
+ */
+uint16_t leer_version_local(void);
+
+/**
+ * @brief Guarda en numero de la version local de la db en la NVS.
+ * @return - ESP-OK se guardo correctamente.
+ * @return - ESP-FAIL error.
+ */
+esp_err_t guardar_version_local(uint32_t nueva_version);
+
+/**
+ * @brief Obtener version de la DB de la nube.
+ * @return [int] Version. En caso de error devuelve 0.
+ */
+uint16_t obtener_version_nube(void);
+
+
 
