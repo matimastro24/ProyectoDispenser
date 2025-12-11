@@ -13,6 +13,7 @@
 #include "nvs.h"
 #include "time_sync.h"
 #include <unistd.h>
+#include "http_server.h"
 /*
 https://script.google.com/macros/s/AKfycbwWRQocdLq13cf1czfCb8BNM0pRrFgPVpoc2TCTqiJtHO3_astKrJcsP_DZ13osDn_vVg/exec
 */
@@ -386,6 +387,8 @@ void purgar_logs_viejos() {
     
     if (rename("/littlefs/temp_logs.bin", "/littlefs/cambios.bin") == 0) {
         ESP_LOGI(TAG, "Purga exitosa. Conservados (Hoy): %d | Eliminados (Viejos): %d", conservados, eliminados);
+        subirContador(conservados);
+        //CREAR TAREA PARA SUBIR LOS LOGS. PAUSAR LA TAREA DE SINCRO MIENTRAS NO ESTOY EN EL MENU.
     } else {
         ESP_LOGE(TAG, "Fallo al renombrar el archivo temporal.");
     }

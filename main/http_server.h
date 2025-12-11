@@ -1,5 +1,6 @@
 #pragma once
 #include <stddef.h>
+#include <stdint.h>
 #include "esp_err.h"
 #include "esp_http_client.h"
 #include "cJSON.h"   
@@ -38,5 +39,7 @@ esp_err_t guardar_version_local(uint32_t nueva_version);
  */
 uint16_t obtener_version_nube(void);
 
+void subirContador(uint16_t contador);
+uint16_t tiempoBombeo();
 
 

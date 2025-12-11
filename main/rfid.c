@@ -1,5 +1,6 @@
 #include "rfid.h"
 
+
 static const char *TAG = "RFID";
 
 
@@ -24,7 +25,7 @@ static void on_picc_state_changed(void *arg, esp_event_base_t base,
                        ((uint32_t)picc->uid.value[2] << 8)  |
                        (uint32_t)picc->uid.value[3];
             
-            ESP_LOGI(TAG, "RFID Numérico: %" PRIu32 " (Hex: %X)", rfid_num, rfid_num);
+            //ESP_LOGI(TAG, "RFID Numérico: %" PRIu32 " (Hex: %X)", rfid_num, rfid_num);
         } else {
             ESP_LOGW(TAG, "Longitud de UID no soportada (%d bytes)", picc->uid.length);
         }

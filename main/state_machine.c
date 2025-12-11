@@ -3,6 +3,7 @@
 #include "driver/gpio.h"
 #include "esp_wifi.h"
 #include "freertos/FreeRTOS.h"
+#include "freertos/projdefs.h"
 #include "freertos/semphr.h"
 #include "freertos/task.h"
 #include "http_server.h"
@@ -77,6 +78,35 @@ static void tarea_sincronizacion_background(void *pvParameters);
 // Funciones publicas
 
 static bool ram_usos_diarios_sincronizada = false;
+TaskHandle_t handleSYNC = NULL;
+
+void pausarSYNC(void)
+{
+    if (handleSYNC == NULL) {
+        return; // La tarea nunca se creó o ya se eliminó
+    }
+
+    eTaskState estado = eTaskGetState(handleSYNC);
+
+    // Solo suspendo si NO está ya suspendida ni borrada
+    if (estado != eSuspended && estado != eDeleted) {
+        vTaskSuspend(handleSYNC);
+    }
+}
+
+void reanudarSYNC(void)
+{
+    if (handleSYNC == NULL) {
+        return; // La tarea nunca se creó o ya se eliminó
+    }
+
+    eTaskState estado = eTaskGetState(handleSYNC);
+
+    // Solo reanudo si está suspendida
+    if (estado == eSuspended) {
+        vTaskResume(handleSYNC);
+    }
+}
 
 void state_machine_init() {
 	// Inicio de componentes.
@@ -111,7 +141,7 @@ void state_machine_init() {
 		NULL, // Parámetros (no usamos)
 		1,	  // Prioridad (1 = Baja, 5 = Alta).
 			  // Ponemos 1 para que NO interrumpa al lector RFID.
-		NULL, // Handle (no necesitamos guardarlo)
+		&handleSYNC, // Handle
 		0	  // Core ID: 0 (Background) o 1 (Main/Arduino)
 	);
 	ESP_LOGI(TAG, "Máquina de estados inicializada");
@@ -121,7 +151,7 @@ void state_machine_init() {
 void state_machine_update(void) {
 	switch (current_state) {
 	case STATE_MENU:
-		if (!ram_usos_diarios_sincronizada) {
+		if (!ram_usos_diarios_sincronizada && existe_archivo("/littlefs/cambios.bin")) {
 			if (recuperar_usos_del_dia() == ESP_OK) {
 				ram_usos_diarios_sincronizada = true;
 				show_menu();
@@ -174,7 +204,7 @@ void state_machine_update(void) {
 		}
 		break;
 	case STATE_DISPENSING:
-		if (check_timeout(DISPENSE_MAX_TIME_MS)) {
+		if (check_timeout(tiempoBombeo()*1000)) {
 			deactivate_dispenser();
 			lcd_clear(&lcd);
 			lcd_set_cursor(&lcd, 1, 0);
@@ -286,7 +316,7 @@ void state_machine_key_pressed(char key) {
 
 void state_machine_rfid_detected(uint32_t uid) {
 	if (current_state == STATE_MENU) {
-		ESP_LOGI(TAG, "RFID Numérico: %" PRIu32 " (Hex: %X)", uid, uid);
+		//ESP_LOGI(TAG, "RFID Numérico: %" PRIu32 " (Hex: %X)", uid, uid);
 		uid_numero = uid;
 		rfid_flag = true;
 	}
@@ -311,15 +341,18 @@ static void change_state(system_state_t new_state) {
 	case STATE_MENU:
 		show_menu();
 		rc522_start(scanner);
+		reanudarSYNC();
 		break;
 	case STATE_ENTER_DNI:
 		show_enter_dni();
+		pausarSYNC();
 		break;
 	case STATE_ENTER_PIN:
 		show_enter_pin();
 		break;
 	case STATE_VALIDATING:
 		show_validating();
+		pausarSYNC();
 		break;
 	case STATE_SHOW_USER:
 		show_user_info();
@@ -475,78 +508,85 @@ static void tarea_sincronizacion_background(void *pvParameters) {
 	// wifi_init_sta();
 	// iniciar_sntp();
 	// BUCLE INFINITO DE MANTENIMIENTO
+	uint32_t contador = 0;
 	while (1) {
-		vTaskDelay(pdMS_TO_TICKS(10000));
-		ESP_LOGI(TAG_SYNC, "Arrancando servicio de sincronización...");
-		if (obtener_dia_anio_actual() != -1) { // Espera activa de hasta 10 seg
-			if (existe_archivo("/littlefs/cambios.bin")) {
-				/**
-				 * Antes de purgar los logs viejo se podrian subir a otra hoja de datos
-				 * para tener registro permanente de las extracciones. No esta nada implementado.
-				 */
-				purgar_logs_viejos();
+		
+		if(contador < 1000){
+			vTaskDelay(pdMS_TO_TICKS(100));
+			contador++;
+		}else{
+			vTaskDelay(pdMS_TO_TICKS(10000));
+			ESP_LOGI(TAG_SYNC, "Arrancando servicio de sincronización...");
+			if (obtener_dia_anio_actual() != -1) { // Espera activa de hasta 10 seg
+				if (existe_archivo("/littlefs/cambios.bin")) {
+					/**
+					 * Antes de purgar los logs viejo se podrian subir a otra hoja de datos
+					 * para tener registro permanente de las extracciones. No esta nada implementado.
+					 */ 
+					purgar_logs_viejos();
+				}
 			}
-		}
-
-		if (wifi_is_connected()) {
-			ESP_LOGW(TAG_SYNC, "Hay conexión WIFI. ");
-
-			// Leer versiones.
-			uint16_t version_local = leer_version_local();
-			uint16_t version_nube = obtener_version_nube();
-
-			if (version_nube > 0 && version_local > 0) {
-				// se pudieron leer ambas veriones
-				if (version_nube > version_local) {
-					ESP_LOGI(
-						TAG_SYNC,
-						"Actualización encontrada: Nube V%d > Local V%" PRIu32,
-						version_nube, version_local);
-
-					// A. Descarga a Flash (Lenta, pero segura, no toca RAM aun)
-					if (descargar_base_datos() == ESP_OK) {
-
-						ESP_LOGI(
-							TAG_SYNC,
-							"Descarga completa. Esperando acceso a RAM...");
-
-						// B. Actualización de RAM. Se hace solo cuando se esta
-						// en el menu.
-						// para que la maquina de estados no este utilizando la
-						// db acutal y poder cambiarla.
-						if (state_machine_get_state() == STATE_MENU) {
-							ESP_LOGI(TAG_SYNC, "Actualizando ram");
-							cargar_db_a_ram_stream();
-							recuperar_usos_del_dia();
-
-							// Confirmar versión nueva en NVS
-							guardar_version_local((uint32_t)version_nube);
-							ESP_LOGI(TAG_SYNC,
-									 "RAM Actualizada exitosamente a V%d",
-									 version_nube);
+	
+			if (wifi_is_connected()) {
+				ESP_LOGW(TAG_SYNC, "Hay conexión WIFI. ");
+	
+				// Leer versiones.
+				uint16_t version_local = leer_version_local();
+				uint16_t version_nube = obtener_version_nube();
+	
+				if (version_nube > 0 && version_local >= 0) {
+					// se pudieron leer ambas veriones
+					if (version_nube > version_local) {
+						//ESP_LOGI(
+							//TAG_SYNC,
+							//"Actualización encontrada: Nube V%d > Local V%" PRIu32,
+							//version_nube, version_local);
+	
+						// A. Descarga a Flash (Lenta, pero segura, no toca RAM aun)
+						if (descargar_base_datos() == ESP_OK) {
+	
+							ESP_LOGI(
+								TAG_SYNC,
+								"Descarga completa. Esperando acceso a RAM...");
+	
+							// B. Actualización de RAM. Se hace solo cuando se esta
+							// en el menu.
+							// para que la maquina de estados no este utilizando la
+							// db acutal y poder cambiarla.
+							if (state_machine_get_state() == STATE_MENU) {
+								ESP_LOGI(TAG_SYNC, "Actualizando ram");
+								cargar_db_a_ram_stream();
+								recuperar_usos_del_dia();
+	
+								// Confirmar versión nueva en NVS
+								guardar_version_local((uint32_t)version_nube);
+								ESP_LOGI(TAG_SYNC,
+										 "RAM Actualizada exitosamente a V%d",
+										 version_nube);
+							} else {
+								ESP_LOGE(TAG_SYNC,
+										 "Fuera del menu, no se actuliza ram.");
+							}
 						} else {
-							ESP_LOGE(TAG_SYNC,
-									 "Fuera del menu, no se actuliza ram.");
+							ESP_LOGE(TAG_SYNC, "Fallo la descarga del JSON. "
+											   "Integridad NVS intacta.");
 						}
 					} else {
-						ESP_LOGE(TAG_SYNC, "Fallo la descarga del JSON. "
-										   "Integridad NVS intacta.");
+						//ESP_LOGD(TAG_SYNC, "Sistema actualizado.", version_local);
+						//ESP_LOGW(TAG_SYNC, "VERSION LOCAL: %" PRIu32 ".",
+								 //version_local);
+						//ESP_LOGW(TAG_SYNC, "VERSION NUBE: %" PRIu32 ".",
+								 //version_nube);
 					}
 				} else {
-					ESP_LOGD(TAG_SYNC, "Sistema actualizado.", version_local);
-					ESP_LOGW(TAG_SYNC, "VERSION LOCAL: %" PRIu32 ".",
-							 version_local);
-					ESP_LOGW(TAG_SYNC, "VERSION NUBE: %" PRIu32 ".",
-							 version_nube);
+					//ESP_LOGW(TAG_SYNC, "ERROR OBTENIENDO VERSIONES.");
+					//ESP_LOGW(TAG_SYNC, "VERSION LOCAL: %" PRIu32 ".",
+							 //version_local);
+					//ESP_LOGW(TAG_SYNC, "VERSION NUBE: %" PRIu32 ".", version_nube);
 				}
-			} else {
-				ESP_LOGW(TAG_SYNC, "ERROR OBTENIENDO VERSIONES.");
-				ESP_LOGW(TAG_SYNC, "VERSION LOCAL: %" PRIu32 ".",
-						 version_local);
-				ESP_LOGW(TAG_SYNC, "VERSION NUBE: %" PRIu32 ".", version_nube);
 			}
-		}
-		ESP_LOGI(TAG_SYNC, "Finaliza tarea de sincronizacion.");
-		vTaskDelay(pdMS_TO_TICKS(100000));
+			ESP_LOGI(TAG_SYNC, "Finaliza tarea de sincronizacion.");
+			contador = 0;
+		}//vTaskDelay(pdMS_TO_TICKS(100000));
 	}
 }
