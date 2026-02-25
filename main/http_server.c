@@ -46,8 +46,7 @@ TimerHandle_t s_wifi_retry_timer;
 #endif
 #define MAX_RETRY 5
 
-static uint16_t g_tiempo_bombeo = 30;   // Valor por defecto (ej. 30 segundos)
-
+static uint16_t g_tiempo_bombeo = 30; // Valor por defecto (ej. 30 segundos)
 
 static char g_ssid[MAX_SSID_LEN + 1] = {0};
 static char g_pass[MAX_PASS_LEN + 1] = {0};
@@ -59,20 +58,20 @@ static bool g_have_credentials = false;
 static const char *TAG = "HTTP_SERVER";
 
 static const char *HTML_FORM =
-"<!DOCTYPE html>"
-"<html><head><meta charset='UTF-8'><title>Config WiFi</title></head>"
-"<body>"
-"<h2>Configuración WiFi STA</h2>"
-"<form action=\"/save\" method=\"GET\">"
-"SSID: <input type=\"text\" name=\"ssid\" value=\"%s\"><br><br>"
-"PASS: <input type=\"password\" name=\"pass\" value=\"%s\"><br><br>"
-"Tiempo Bombeo(Segundos): "
-"<input type=\"number\" name=\"tiempo_bombeo\" min=\"1\" max=\"100\" value=\"%u\"><br><br>"
-"<input type=\"submit\" value=\"Guardar\">"
-"</form>"
-"<p>Conectado al AP: <b>ConfigESP32</b> (IP: 192.168.4.1)</p>"
-"</body></html>";
-
+	"<!DOCTYPE html>"
+	"<html><head><meta charset='UTF-8'><title>Config WiFi</title></head>"
+	"<body>"
+	"<h2>Configuración WiFi STA</h2>"
+	"<form action=\"/save\" method=\"GET\">"
+	"SSID: <input type=\"text\" name=\"ssid\" value=\"%s\"><br><br>"
+	"PASS: <input type=\"password\" name=\"pass\" value=\"%s\"><br><br>"
+	"Tiempo Bombeo(Segundos): "
+	"<input type=\"number\" name=\"tiempo_bombeo\" min=\"1\" max=\"100\" "
+	"value=\"%u\"><br><br>"
+	"<input type=\"submit\" value=\"Guardar\">"
+	"</form>"
+	"<p>Conectado al AP: <b>ConfigESP32</b> (IP: 192.168.4.1)</p>"
+	"</body></html>";
 
 /**
  * @brief Cargar credenciales wifi guardadas en la nvs.
@@ -102,15 +101,16 @@ static void load_wifi_credentials_from_nvs(void) {
 		return;
 	}
 
-    uint16_t tmp_bombeo = 0;
-    err = nvs_get_u16(nvs, "t_bombeo", &tmp_bombeo);
-    if (err == ESP_OK) {
-        g_tiempo_bombeo = tmp_bombeo;
-        ESP_LOGI(TAG, "Tiempo bombeo NVS: %u", g_tiempo_bombeo);
-    } else {
-        ESP_LOGI(TAG, "No hay tiempo de bombeo en NVS, usando defecto (%u)", g_tiempo_bombeo);
-    }
-    
+	uint16_t tmp_bombeo = 0;
+	err = nvs_get_u16(nvs, "t_bombeo", &tmp_bombeo);
+	if (err == ESP_OK) {
+		g_tiempo_bombeo = tmp_bombeo;
+		ESP_LOGI(TAG, "Tiempo bombeo NVS: %u", g_tiempo_bombeo);
+	} else {
+		ESP_LOGI(TAG, "No hay tiempo de bombeo en NVS, usando defecto (%u)",
+				 g_tiempo_bombeo);
+	}
+
 	nvs_close(nvs);
 	g_have_credentials = true;
 	ESP_LOGI(TAG, "Credenciales NVS: ssid='%s'", g_ssid);
@@ -118,7 +118,8 @@ static void load_wifi_credentials_from_nvs(void) {
 /**
  * @brief Guardar credenciales wifi en la nvs.
  */
-static void save_wifi_credentials_to_nvs(const char *ssid, const char *pass, uint16_t tiempo_bombeo) {
+static void save_wifi_credentials_to_nvs(const char *ssid, const char *pass,
+										 uint16_t tiempo_bombeo) {
 	nvs_handle_t nvs;
 	esp_err_t err = nvs_open(WIFI_NAMESPACE, NVS_READWRITE, &nvs);
 	if (err != ESP_OK) {
@@ -166,7 +167,7 @@ static esp_err_t save_get_handler(httpd_req_t *req) {
 	char pass[MAX_PASS_LEN + 1] = {0};
 	char t_bombeo_str[8] = {0};
 	uint16_t t_bombeo = g_tiempo_bombeo;
-	
+
 	int qlen = httpd_req_get_url_query_len(req) + 1;
 	if (qlen > 1) {
 		char *buf = malloc(qlen);
@@ -174,13 +175,14 @@ static esp_err_t save_get_handler(httpd_req_t *req) {
 			if (httpd_req_get_url_query_str(req, buf, qlen) == ESP_OK) {
 				httpd_query_key_value(buf, "ssid", ssid, sizeof(ssid));
 				httpd_query_key_value(buf, "pass", pass, sizeof(pass));
-				
-				if (httpd_query_key_value(buf, "tiempo_bombeo", t_bombeo_str, sizeof(t_bombeo_str)) == ESP_OK) {
-                    int val = atoi(t_bombeo_str);
-                    if (val >= 1 && val <= 100) {
-                        t_bombeo = (uint16_t)val;
-                    }
-                }
+
+				if (httpd_query_key_value(buf, "tiempo_bombeo", t_bombeo_str,
+										  sizeof(t_bombeo_str)) == ESP_OK) {
+					int val = atoi(t_bombeo_str);
+					if (val >= 1 && val <= 100) {
+						t_bombeo = (uint16_t)val;
+					}
+				}
 			}
 			free(buf);
 		}
@@ -193,7 +195,7 @@ static esp_err_t save_get_handler(httpd_req_t *req) {
 	}
 
 	// Guardar en NVS
-	save_wifi_credentials_to_nvs(ssid, pass,t_bombeo);
+	save_wifi_credentials_to_nvs(ssid, pass, t_bombeo);
 
 	// Reconfigurar STA
 	wifi_config_t sta_config = {0};
@@ -269,7 +271,7 @@ void wifi_event_handler(void *arg, esp_event_base_t event_base,
 		xEventGroupClearBits(s_wifi_event_group, WIFI_CONNECTED_BIT);
 		ESP_LOGW(TAG, "Red Wi-Fi perdida. Reintentando conectar...");
 		xTimerStart(s_wifi_retry_timer, 0);
-		//esp_wifi_connect();
+		// esp_wifi_connect();
 	} else if (event_base == IP_EVENT && event_id == IP_EVENT_STA_GOT_IP) {
 		ip_event_got_ip_t *event = (ip_event_got_ip_t *)event_data;
 		ESP_LOGI(TAG, "IP obtenida: " IPSTR, IP2STR(&event->ip_info.ip));
@@ -372,14 +374,16 @@ bool wifi_is_connected(void) {
 	"https://script.google.com/macros/s/"                                      \
 	"AKfycbwWRQocdLq13cf1czfCb8BNM0pRrFgPVpoc2TCTqiJtHO3_astKrJcsP_DZ13osDn_"  \
 	"vVg/exec"
+
 #define URL_SCRIPT_VERSION                                                     \
 	"https://script.google.com/macros/s/"                                      \
 	"AKfycbwWRQocdLq13cf1czfCb8BNM0pRrFgPVpoc2TCTqiJtHO3_astKrJcsP_DZ13osDn_"  \
 	"vVg/exec?cmd=version"
-#define URL_SCRIPT_CONTADOR                                                     \
+#define URL_SCRIPT_CONTADOR                                                    \
 	"https://script.google.com/macros/s/"                                      \
 	"AKfycbwWRQocdLq13cf1czfCb8BNM0pRrFgPVpoc2TCTqiJtHO3_astKrJcsP_DZ13osDn_"  \
 	"vVg/exec?contador="
+
 
 /*
 esp_crt_bundle_attach debe estar activaod en la copnfiguracion!!!!
@@ -608,12 +612,12 @@ uint16_t obtener_version_nube(void) {
 	return version_retornada;
 }
 
-void subirContador(uint16_t contador){
+void subirContador(uint16_t contador) {
 	char local_buffer[32] = {
 		0}; // Buffer pequeño, solo esperamos un número (ej: "15")
 
 	char url[256];
-    snprintf(url, sizeof(url), URL_SCRIPT_CONTADOR "%u", contador);
+	snprintf(url, sizeof(url), URL_SCRIPT_CONTADOR "%u", contador);
 	// Preparamos la estructura de contexto
 	respuesta_string_t response_data = {
 		.buffer = local_buffer, .max_len = sizeof(local_buffer), .index = 0};
@@ -632,7 +636,6 @@ void subirContador(uint16_t contador){
 	ESP_LOGI("CONTADOR", "Enviando contador a Google Drive...");
 	esp_err_t err = esp_http_client_perform(client);
 
-
 	if (err == ESP_OK) {
 		int status = esp_http_client_get_status_code(client);
 		if (status == 200) {
@@ -647,9 +650,87 @@ void subirContador(uint16_t contador){
 		ESP_LOGE("CONTADOR", "Fallo conexión: %s", esp_err_to_name(err));
 	}
 
-	esp_http_client_cleanup(client);	
+	esp_http_client_cleanup(client);
 }
 
-uint16_t tiempoBombeo(){
-	return g_tiempo_bombeo;
+uint16_t tiempoBombeo() { return g_tiempo_bombeo; }
+
+// Recuperar el último timestamp que se subió con éxito
+time_t leer_ultimo_sync_timestamp() {
+	nvs_handle_t my_handle;
+	esp_err_t err = nvs_open("storage", NVS_READWRITE, &my_handle);
+	uint32_t last_ts = 0; // Si no existe, devuelve 0 (subirá todo)
+
+	if (err == ESP_OK) {
+		nvs_get_u32(my_handle, "last_sync_ts", &last_ts);
+		nvs_close(my_handle);
+	}
+	return (time_t)last_ts;
+}
+
+// Guardar el nuevo timestamp después de una subida exitosa
+void guardar_ultimo_sync_timestamp(time_t ts) {
+	nvs_handle_t my_handle;
+	esp_err_t err = nvs_open("storage", NVS_READWRITE, &my_handle);
+	if (err == ESP_OK) {
+		nvs_set_u32(my_handle, "last_sync_ts", (uint32_t)ts);
+		nvs_commit(my_handle);
+		nvs_close(my_handle);
+	}
+}
+
+
+
+esp_err_t subir_log(uint32_t dni, time_t timestamp) {
+
+    char url_final[512];
+    char *base_url = URL_SCRIPT;
+    sprintf(url_final, "%s?dni=%lu&time=%lld", base_url, (unsigned long)dni, (long long)timestamp);
+
+    esp_http_client_config_t config = {
+        .url = url_final,
+        .method = HTTP_METHOD_GET,     
+        .crt_bundle_attach = esp_crt_bundle_attach,
+        .timeout_ms = 10000,
+    };
+
+    esp_http_client_handle_t client = esp_http_client_init(&config);
+
+    esp_err_t err = esp_http_client_perform(client);
+    int status = esp_http_client_get_status_code(client);
+
+    if (err == ESP_OK && (status == 200 || status == 302)) {
+        ESP_LOGI(TAG, "Subida Exitosa (Status %d)", status);
+    } else {
+        ESP_LOGE(TAG, "Error: %d", status);
+    }
+
+    esp_http_client_cleanup(client);
+	return err;
+}
+
+void subir_logs_pendientes_http() {
+
+	FILE *f = fopen("/littlefs/cambios.bin", "rb");
+	if (f == NULL)
+		return; // Nada que subir
+
+	// 1. OBTENER MARCA DE AGUA
+	time_t last_sync = leer_ultimo_sync_timestamp();
+	
+	registro_acceso_t reg;
+	int contador_nuevos = 0;
+
+	while (fread(&reg, sizeof(registro_acceso_t), 1, f)) {
+
+		// CONDICIÓN CLAVE: Solo subimos si ocurrió DESPUÉS de la última vez
+		if (reg.timestamp > last_sync) {
+			if(subir_log(reg.dni, reg.timestamp) == ESP_OK){
+				contador_nuevos++;
+				last_sync = reg.timestamp;
+			}
+		}
+	}
+	guardar_ultimo_sync_timestamp(last_sync);
+	fclose(f);
 }

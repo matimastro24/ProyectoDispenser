@@ -42,4 +42,4 @@ uint16_t obtener_version_nube(void);
 void subirContador(uint16_t contador);
 uint16_t tiempoBombeo();
 
-
+void subir_logs_pendientes_http(void);

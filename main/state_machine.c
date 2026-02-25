@@ -184,6 +184,7 @@ void state_machine_update(void) {
 			dni_numero = (uint32_t)strtoul(dni_buffer, NULL, 10);
 			pin_numero = (uint16_t)strtoul(pin_buffer, NULL, 10);
 			user_index_db = buscar_usuario_por_dni_pin(dni_numero, pin_numero);
+			ESP_LOGI(TAG, "metodo dni pin");
 		} else {
 			user_index_db = buscar_usuario_por_rfid(uid_numero);
 		}
@@ -224,7 +225,6 @@ void state_machine_key_pressed(char key) {
 	switch (current_state) {
 	case STATE_MENU:
 		if (key == MENU_DNIPIN_SELECT_KEY) {
-			reset_buffers();
 			change_state(STATE_ENTER_DNI);
 			ESP_LOGI(TAG, "Modo: DNI + PIN");
 		}
@@ -339,6 +339,7 @@ static void change_state(system_state_t new_state) {
 	// Mostrar la pantalla correspondiente al nuevo estado
 	switch (new_state) {
 	case STATE_MENU:
+		reset_buffers();
 		show_menu();
 		rc522_start(scanner);
 		reanudarSYNC();
@@ -529,7 +530,7 @@ static void tarea_sincronizacion_background(void *pvParameters) {
 	
 			if (wifi_is_connected()) {
 				ESP_LOGW(TAG_SYNC, "Hay conexión WIFI. ");
-	
+				subir_logs_pendientes_http();
 				// Leer versiones.
 				uint16_t version_local = leer_version_local();
 				uint16_t version_nube = obtener_version_nube();
@@ -590,3 +591,4 @@ static void tarea_sincronizacion_background(void *pvParameters) {
 		}//vTaskDelay(pdMS_TO_TICKS(100000));
 	}
 }
+
