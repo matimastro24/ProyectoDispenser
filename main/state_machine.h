@@ -10,7 +10,6 @@
 
 // Estados del sistema
 typedef enum {
-    STATE_PROVISIONING,   // No hay coneccion wifi
     STATE_MENU,           // Menú inicial
     STATE_ENTER_DNI,      // Ingresando DNI
     STATE_ENTER_PIN,      // Ingresando PIN
@@ -20,32 +19,35 @@ typedef enum {
     STATE_ERROR           // Error de validación
 } system_state_t;
 
-// Estructura de datos del usuario validado
-typedef struct {
-    char nombre[50];
-    char apellido[50];
-    int extracciones;
-} user_data_t;
+/**
+ * @brief Inicializacion de maquina de estados.
+ */
+void state_machine_init();
 
-// Inicialización de la máquina de estados
-void state_machine_init(lcd_t *lcd_ptr, rc522_handle_t *scanner_ptr);
+/**
+ * @brief Actualiza los estados que dependen del tiempo.
+ */
+void state_machine_update(void);
 
-// Actualización del estado cuando hay wifi 
-void state_machine_update_w_wifi(void);
-
-// Actualización del cuando no hay wifi 
-void state_machine_update_no_wifi(void);
-
-// Callback para teclas presionadas
+/**
+ * @brief Llamar a esta funcion cuando se detecta una tecla pulsada
+ * para actualizar la maquina de estados.
+ * @param key [in] Tecla pulsada.
+ */
 void state_machine_key_pressed(char key);
 
-// Callback para RFID detectado
-void state_machine_rfid_detected(const char *uid);
+/**
+ * @brief Llamar a esta funcion cuando se detecta un RFID,
+ * desde el event handler del sensor. La funcion modifica
+ * la bandera rfid_flag para que la maquina de estados sepa
+ * que se detecto una tarjeta RFID.
+ * @param uid [in] UID Detectado.
+ */
+void state_machine_rfid_detected(uint32_t uid);
 
-// Callback para resultado de validación
-void state_machine_validation_result(bool success, const char* nombre, 
-                                     const char* apellido, int extracciones);
-
-// Obtener estado actual
+/**
+ * @brief Obtener estado actual de la maquina de estados.
+ */
 system_state_t state_machine_get_state(void);
+
 #endif

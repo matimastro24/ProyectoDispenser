@@ -23,9 +23,20 @@ dependencies:
     source:
       type: idf
     version: 5.5.1
+  joltwallet/littlefs:
+    component_hash: 1808d73e99168f6f3c26dd31799a248484762b3a320ec4962dec11a145f4277f
+    dependencies:
+    - name: idf
+      require: private
+      version: '>=5.0'
+    source:
+      registry_url: https://components.espressif.com/
+      type: service
+    version: 1.20.3
 direct_dependencies:
 - abobija/rc522
 - espressif/cjson
-manifest_hash: 0994c7f3f99c7deec28c98dbeeb77162081f22f337ec17ed3a1f3f4989caf1c3
+- joltwallet/littlefs
+manifest_hash: cc275d0b6b43c371a95e1affd8e565a896fea013a0f09d3dfcd8a6413c5915cb
 target: esp32
 version: 2.0.0

@@ -1,4 +1,5 @@
 dependencies:
-  espressif/cjson: "^1.7.15"
+  espressif/cjson: ^1.7.15
   abobija/rc522:
     version: '*'
+  joltwallet/littlefs: '*'

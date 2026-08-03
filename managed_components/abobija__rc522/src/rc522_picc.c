@@ -832,6 +832,7 @@ char *rc522_picc_type_name(rc522_picc_type_t type)
             return "unknown";
     }
 }
+
 esp_err_t rc522_picc_print(const rc522_picc_t *picc)
 {
     RC522_CHECK(picc == NULL);
@@ -840,14 +841,13 @@ esp_err_t rc522_picc_print(const rc522_picc_t *picc)
     RC522_RETURN_ON_ERROR(rc522_picc_uid_to_str(&picc->uid, uid_str, sizeof(uid_str)));
 
     ESP_LOGI(TAG, "");
-    ESP_LOGI(TAG, "----------------");
-    ESP_LOGI(TAG, "|              | Type: %s", rc522_picc_type_name(picc->type));
-    ESP_LOGI(TAG, "|     RFID     | UID:  %s", uid_str);
-    ESP_LOGI(TAG, "|     CARD     | ATQA: 0x%04" RC522_X, picc->atqa.source);
-    ESP_LOGI(TAG, "|              | SAK:  0x%02" RC522_X, picc->sak);
-    ESP_LOGI(TAG, "----------------");
+    ESP_LOGI(TAG, "╔══════════════╗");
+    ESP_LOGI(TAG, "║              ║ Type: %s", rc522_picc_type_name(picc->type));
+    ESP_LOGI(TAG, "║     RFID     ║ UID:  %s", uid_str);
+    ESP_LOGI(TAG, "║     CARD     ║ ATQA: 0x%04" RC522_X, picc->atqa.source);
+    ESP_LOGI(TAG, "║              ║ SAK:  0x%02" RC522_X, picc->sak);
+    ESP_LOGI(TAG, "╚══════════════╝");
     ESP_LOGI(TAG, "");
-    
-    
+
     return ESP_OK;
 }
